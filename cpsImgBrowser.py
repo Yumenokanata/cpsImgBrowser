@@ -218,7 +218,7 @@ def openZipFile(mFilePos):
         try:
             PWD = PWD_JSON[FILE_MD5]
             CPS_FILE.setpassword(PWD.encode("utf-8"))
-            CPS_FILE.read(listT[0])
+            CPS_FILE.open(listT[0])
         except:
             hasPwd = False
             try:
@@ -229,7 +229,7 @@ def openZipFile(mFilePos):
                 for p in PWD_DEFAULT:
                     try:
                         CPS_FILE.setpassword(p.encode("utf-8"))
-                        CPS_FILE.read(listT[0])
+                        CPS_FILE.open(listT[0])
                         hasPwd = True
                         PWD_JSON.update({FILE_MD5: p})
                         pwdJson = json.dumps(PWD_JSON)
@@ -245,7 +245,7 @@ def openZipFile(mFilePos):
                     return False
                 try:
                     CPS_FILE.setpassword(PWD.encode("utf-8"))
-                    CPS_FILE.read(listT[0])
+                    CPS_FILE.open(listT[0])
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5: PWD})
                     pwdJson = json.dumps(PWD_JSON)
@@ -364,7 +364,7 @@ if __name__ == '__main__':
 
     fileList = os.listdir(FILE_URI)
     fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'zip')]
-    mFilePos = 1116
+    mFilePos = 0
 
     slideT = threading.Timer(0, slide)
     Lock = threading.Lock()
