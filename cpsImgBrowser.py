@@ -295,7 +295,7 @@ def openRarFile(mFilePos):
         try:
             PWD = PWD_JSON[FILE_MD5]
             CPS_FILE.setpassword(PWD)
-            CPS_FILE.read(CPS_FILE.infolist()[0])
+            #CPS_FILE.read(CPS_FILE.infolist()[0])
             #CPS_FILE.testrar()
             sReload = False
         except:
@@ -308,8 +308,8 @@ def openRarFile(mFilePos):
                 for p in PWD_DEFAULT:
                     try:
                         CPS_FILE.setpassword(p)
-                        CPS_FILE.read(listT[0])
-                        #CPS_FILE.testrar()
+                        #CPS_FILE.read(listT[0])
+                        CPS_FILE.testrar()
                         hasPwd = True
                         PWD = p
                         PWD_JSON.update({FILE_MD5:p})
@@ -326,8 +326,8 @@ def openRarFile(mFilePos):
                     return False
                 try:
                     CPS_FILE.setpassword(PWD)
-                    CPS_FILE.read(listT[0])
-                    #CPS_FILE.testrar()
+                    #CPS_FILE.read(listT[0])
+                    CPS_FILE.testrar()
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5:PWD})
                     pwdJson = json.dumps(PWD_JSON)
@@ -361,6 +361,8 @@ if __name__ == '__main__':
     FILE_URI = input("Please input uri: ")
     if (FILE_URI == ""):
         FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
+        FILE_URI = "/media/bush/未知文件夹2/TDDOWNLOAD/C87全彩，非全彩汉化本分类合集第四弹（52本，1.79G，01.18-01.24）/全彩（10）/"
+        #FILE_URI = "/media/bush/未知文件夹2/TDDOWNLOAD/C87全彩，非全彩汉化本分类合集第四弹（52本，1.79G，01.18-01.24）/非全彩（42）/"
 
     fileList = os.listdir(FILE_URI)
     fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'zip')]
