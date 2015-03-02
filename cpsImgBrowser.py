@@ -13,10 +13,9 @@ import zipfile
 import PIL
 from PIL import Image
 from PIL.ImageTk import *
-try:
-    import Tkinter as tk
-except:
-    import tkinter as tk
+import tkinter as tk
+from tkinter.filedialog import *
+from tkinter.simpledialog import *
 
 BACK_IMG = 1
 NEXT_IMG = 2
@@ -48,13 +47,13 @@ def getFileMD5(uri):
     md5file.close()
     return md5
 
-def resize(w, h, w_box, h_box, pil_image):
+def resizePic(w, h, w_box, h_box, pil_image):
     f1 = 1.0*w_box/w
     f2 = 1.0*h_box/h
     factor = min([f1, f2])
     width = int(w*factor)
     height = int(h*factor)
-    return pil_image.resize((width, height), Image.ANTIALIAS)
+    return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
 
 def getImageList():
     tImgList = [info for info in CPS_FILE.infolist()
@@ -96,7 +95,7 @@ def ShowAjoke(root,label):
                     imgInfo = imgList[mImgPos]
         else:
             data = CPS_FILE.read(imgInfo)
-        pil_image = Image.open(io.BytesIO(data))
+        pil_image = PIL.Image.open(io.BytesIO(data))
         imgCache[mImgPos] = pil_image
     else:
         pil_image = imgCache[mImgPos]
@@ -116,12 +115,12 @@ def ShowAjoke(root,label):
     w_box = 600 * scale
     h_box = 550 * scale
     #print h_box
-    pil_image_resized = resize(w, h, w_box, h_box, pil_image)
+    pil_image_resized = resizePic(w, h, w_box, h_box, pil_image)
     wr, hr = pil_image_resized.size
     sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos + 1, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, fileName, fileList[mFilePos].encode("utf-8").decode("utf-8"))
     root.title(sf)
 
-    tk_img = PhotoImage(pil_image_resized)
+    tk_img = PIL.ImageTk.PhotoImage(pil_image_resized)
     label.configure(image = tk_img)
     label.image= tk_img
 
@@ -245,8 +244,9 @@ def openZipFile(mFilePos):
                     except:
                         pass
             while(not hasPwd):
-                print("Zip File: " + fileList[mFilePos])
-                PWD = input('Please input Password(input "skip" to skip): ')
+                PWD = ""
+                while(PWD == ""):
+                    PWD = askstring(title = '请输入密码',prompt = "Zip File: " + fileList[mFilePos] + "\n输入\"skip\"跳过此文件")
                 if(PWD == "skip"):
                     return False
                 try:
@@ -257,7 +257,8 @@ def openZipFile(mFilePos):
                     pwdJson = json.dumps(PWD_JSON)
                     with open('./Pwd.json', 'w') as f:
                         f.write(pwdJson)
-                except:
+                except Exception as ex:
+                    print(ex)
                     print("Password is WRONG !")
     imgList = getImageList()
     imgCache = ["" for i in range(len(imgList))]
@@ -326,8 +327,9 @@ def openRarFile(mFilePos):
                     except:
                         pass
             while(not hasPwd):
-                print("RAR File: " + fileList[mFilePos])
-                PWD = input('Please input Password(input "skip" to skip): ')
+                PWD = ""
+                while(PWD == ""):
+                    PWD = askstring(title = '请输入密码',prompt = "RaR File: " + fileList[mFilePos] + "\n输入\"skip\"跳过此文件")
                 if(PWD == "skip"):
                     return False
                 try:
@@ -365,13 +367,38 @@ def openRarFile(mFilePos):
 '''入口'''
 if __name__ == '__main__':
     #TODO:用对话框输入路径
-    FILE_URI = input("Please input uri: ")
-    if (FILE_URI == ""):
-        FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
+    root = tk.Tk()
+    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width())/2, (600 - root.winfo_height())/2) )
+    root.bind("<Button-1>", changePic)
+    root.bind("<Key>", onKeyPress)
+    mWinChanged = False
+    w_box = 600
+    h_box = 550
+
+    if len(sys.argv)<2:
+        fd = LoadFileDialog(root, title="要打开的文件")
+        FILE_URI = fd.go()
+        if(FILE_URI == NONE):
+            print("URI is wrong")
+            exit()
+        tFilename = FILE_URI.split("/")[-1]
+        FILE_URI = FILE_URI.replace(tFilename, "")
+    else:
+        FILE_URI = sys.argv[1]
+        tFilename = ""
+        if(not FILE_URI[-1] == "/"):
+            tFilename = FILE_URI.split("/")[-1]
+
+    #FILE_URI = input("Please input uri: ")
+    #if (FILE_URI == ""):
+    #    FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
+    #mFilePos = 0
 
     fileList = os.listdir(FILE_URI)
     fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'zip')]
     mFilePos = 0
+    if(tFilename in fileList):
+        mFilePos = fileList.index(tFilename)
 
     slideT = threading.Timer(0, slide)
     Lock = threading.Lock()
@@ -388,14 +415,6 @@ if __name__ == '__main__':
         PWD_JSON = json.JSONDecoder().decode(pwdJson)
     except:
         PWD_JSON = {}
-
-    root = tk.Tk()
-    root.geometry("800x600")
-    root.bind("<Button-1>", changePic)
-    root.bind("<Key>", onKeyPress)
-    mWinChanged = False
-    w_box = 600
-    h_box = 550
 
     while(not openFile()):
         del fileList[mFilePos]
