@@ -87,7 +87,9 @@ def ShowAjoke(root,label):
                     data = CPS_FILE.read(imgInfo)
                     badFile = False
                 except Exception as ex:
-                    print(ex)
+                    #print("mFilePos" + str(mFilePos))
+                    #print("File Name: " + fileList[mFilePos])
+                    #print(ex)
                     del fileList[mFilePos]
                     while(not openFile()):
                         del fileList[mFilePos]
@@ -99,7 +101,7 @@ def ShowAjoke(root,label):
     else:
         pil_image = imgCache[mImgPos]
 
-    flieName = imgInfo.filename.split('\\')[-1].encode('utf-8')
+    flieName = imgInfo.filename.split('\\')[-1]
     w, h = pil_image.size
     #print root.winfo_height()
     if(root.winfo_height() != 1):
@@ -197,7 +199,11 @@ def openZipFile(mFilePos):
         FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
     #print(time.time() - StartTime)
 
-    CPS_FILE = zipfile.ZipFile(FILE_URI + fileList[mFilePos])
+    try:
+        CPS_FILE = zipfile.ZipFile(FILE_URI + fileList[mFilePos])
+    except:
+        print(fileList[mFilePos] + " open fail")
+        return False
     if(len(CPS_FILE.infolist()) != 0):
         listT = getImageList()
         if(len(listT) == 0):
@@ -212,7 +218,7 @@ def openZipFile(mFilePos):
         try:
             PWD = PWD_JSON[FILE_MD5]
             CPS_FILE.setpassword(PWD.encode("utf-8"))
-            CPS_FILE.extract(CPS_FILE.infolist()[0])
+            CPS_FILE.read(listT[0])
         except:
             hasPwd = False
             try:
@@ -223,7 +229,7 @@ def openZipFile(mFilePos):
                 for p in PWD_DEFAULT:
                     try:
                         CPS_FILE.setpassword(p.encode("utf-8"))
-                        CPS_FILE.extract(CPS_FILE.infolist()[0])
+                        CPS_FILE.read(listT[0])
                         hasPwd = True
                         PWD_JSON.update({FILE_MD5: p})
                         pwdJson = json.dumps(PWD_JSON)
@@ -239,7 +245,7 @@ def openZipFile(mFilePos):
                     return False
                 try:
                     CPS_FILE.setpassword(PWD.encode("utf-8"))
-                    CPS_FILE.extract(CPS_FILE.infolist()[0])
+                    CPS_FILE.read(listT[0])
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5: PWD})
                     pwdJson = json.dumps(PWD_JSON)
@@ -273,7 +279,11 @@ def openRarFile(mFilePos):
         FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
     #print("getFileMD5: %f"%(time.time() - st))
 
-    CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+    try:
+        CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+    except:
+        print(fileList[mFilePos] + " open fail")
+        return False
     if(len(CPS_FILE.infolist()) != 0):
         listT = getImageList()
         if(len(listT) == 0):
@@ -285,6 +295,7 @@ def openRarFile(mFilePos):
         try:
             PWD = PWD_JSON[FILE_MD5]
             CPS_FILE.setpassword(PWD)
+            CPS_FILE.read(CPS_FILE.infolist()[0])
             #CPS_FILE.testrar()
             sReload = False
         except:
@@ -297,6 +308,7 @@ def openRarFile(mFilePos):
                 for p in PWD_DEFAULT:
                     try:
                         CPS_FILE.setpassword(p)
+                        CPS_FILE.read(listT[0])
                         #CPS_FILE.testrar()
                         hasPwd = True
                         PWD = p
@@ -314,6 +326,7 @@ def openRarFile(mFilePos):
                     return False
                 try:
                     CPS_FILE.setpassword(PWD)
+                    CPS_FILE.read(listT[0])
                     #CPS_FILE.testrar()
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5:PWD})
@@ -351,7 +364,7 @@ if __name__ == '__main__':
 
     fileList = os.listdir(FILE_URI)
     fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'zip')]
-    mFilePos = 0
+    mFilePos = 1116
 
     slideT = threading.Timer(0, slide)
     Lock = threading.Lock()
