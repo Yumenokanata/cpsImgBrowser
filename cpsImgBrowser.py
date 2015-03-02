@@ -21,6 +21,7 @@ import zipfile
 BACK_IMG = 1
 NEXT_IMG = 2
 SLIDE_TIME = 3
+USE_FILE_MD5 = False
 
 def slide():
     print ("slide")
@@ -36,7 +37,7 @@ def slide():
             break
 
 def getStringMD5(string):
-    return hashlib.md5(string).hexdigest()
+    return hashlib.md5(string.encode("utf-8")).hexdigest()
 
 def getFileMD5(uri):
     if not os.path.exists(uri):
@@ -56,34 +57,49 @@ def resize(w, h, w_box, h_box, pil_image):
     return pil_image.resize((width, height), Image.ANTIALIAS)
 
 def getImageList():
-    imgList = [info for info in CPS_FILE.infolist()
+    tImgList = [info for info in CPS_FILE.infolist()
                if(info.filename.split('.')[-1] == 'jpg'
                   or info.filename.split('.')[-1] == 'png'
                   or info.filename.split('.')[-1] == 'gif')]
-    #with open("img.txt",'r') as f:
-    #    imglist = f.readlines()
-    return imgList
+    return tImgList
 
 def ShowPic(value):
-    global postion
+    global mImgPos
     if(value == BACK_IMG):
-        postion -= 1
+        mImgPos -= 1
     elif(value == NEXT_IMG):
-        postion += 1
-    postion %= len(list)
-    ShowAjoke(root,label,list[postion])
+        mImgPos += 1
+    mImgPos %= len(imgList)
+    ShowAjoke(root, label)
 
-def ShowAjoke(root,label,imgInfo):
-    global postion
-    flieName = imgInfo.filename.split('\\')[-1].encode('utf-8')
-    if (imgCache[postion] == ""):
-        data = CPS_FILE.read(imgInfo)
+def ShowAjoke(root,label):
+    global mImgPos
+    global mFilePos
+    global fileList
+    global imgList
+
+    imgInfo = imgList[mImgPos]
+    if (imgCache[mImgPos] == ""):
+        if(mImgPos == 0):
+            badFile = True
+            while(badFile):
+                try:
+                    data = CPS_FILE.read(imgInfo)
+                    badFile = False
+                except Exception as ex:
+                    print(ex)
+                    del fileList[mFilePos]
+                    while(not openFile()):
+                        del fileList[mFilePos]
+                    imgInfo = imgList[mImgPos]
+        else:
+            data = CPS_FILE.read(imgInfo)
         pil_image = Image.open(io.BytesIO(data))
-        imgCache[postion] = pil_image
+        imgCache[mImgPos] = pil_image
     else:
-        pil_image = imgCache[postion]
+        pil_image = imgCache[mImgPos]
 
-    # get the size of the image
+    flieName = imgInfo.filename.split('\\')[-1].encode('utf-8')
     w, h = pil_image.size
     #print root.winfo_height()
     if(root.winfo_height() != 1):
@@ -95,7 +111,7 @@ def ShowAjoke(root,label,imgInfo):
     #print h_box
     pil_image_resized = resize(w, h, w_box, h_box, pil_image)
     wr, hr = pil_image_resized.size
-    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos, len(fileList), postion + 1, IMG_SUM, wr, hr, flieName, fileList[mFilePos])
+    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, flieName, fileList[mFilePos])
     root.title(sf)
 
     tk_img = PhotoImage(pil_image_resized)
@@ -126,9 +142,9 @@ def onKeyPress(ev):
             Lock.release()
 
         mFilePos += 1
-        while(not openFile(mFilePos)):
+        while(not openFile()):
             del fileList[mFilePos]
-        ShowAjoke(root,label,list[postion])
+        ShowAjoke(root, label)
     elif(ev.keycode == 38):
         if (slideT.isAlive()):
             Lock.acquire()
@@ -136,10 +152,10 @@ def onKeyPress(ev):
             Lock.release()
 
         mFilePos -= 1
-        while(not openFile(mFilePos)):
+        while(not openFile()):
             del fileList[mFilePos]
             mFilePos -= 1
-        ShowAjoke(root,label,list[postion])
+        ShowAjoke(root, label)
     elif(ev.keycode == 43):
         if (slideT.isAlive()):
             Lock.acquire()
@@ -152,7 +168,8 @@ def onKeyPress(ev):
             slideT = threading.Timer(0, slide)
             slideT.start()
 
-def openFile(mFilePos):
+def openFile():
+    global mFilePos
     mFilePos %= len(fileList)
     #print(fileList[mFilePos])
     if(fileList[mFilePos].split('.')[-1].lower() == 'rar'):
@@ -165,28 +182,20 @@ def openZipFile(mFilePos):
     global CPS_FILE
     global imgCache
     global IMG_SUM
-    global postion
-    global list
+    global mImgPos
+    global imgList
     global fileList
+    global PWD_JSON
 
     if not os.path.exists(FILE_URI + fileList[mFilePos]):
         print("error:fileURI not exists")
         exit()
     #StartTime = time.time()
-    FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
+    if(USE_FILE_MD5):
+        FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
+    else:
+        FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
     #print(time.time() - StartTime)
-
-    try:
-        with open('./Pwd.json','r') as f:
-            pwdJson = f.read()
-    except:
-        with open('./Pwd.json','w') as f:
-            f.write('')
-        pwdJson = ''
-    try:
-        PWD_JSON = json.JSONDecoder().decode(pwdJson)
-    except:
-        PWD_JSON = {}
 
     CPS_FILE = zipfile.ZipFile(FILE_URI + fileList[mFilePos])
     if(len(CPS_FILE.infolist()) != 0):
@@ -202,8 +211,8 @@ def openZipFile(mFilePos):
     if(needs_password):
         try:
             PWD = PWD_JSON[FILE_MD5]
-            CPS_FILE.setpassword(PWD)
-            CPS_FILE.testzip()
+            CPS_FILE.setpassword(PWD.encode("utf-8"))
+            CPS_FILE.extract(CPS_FILE.infolist()[0])
         except:
             hasPwd = False
             try:
@@ -213,13 +222,13 @@ def openZipFile(mFilePos):
             if (not len(PWD_DEFAULT) == 0):
                 for p in PWD_DEFAULT:
                     try:
-                        CPS_FILE.setpassword(p)
-                        CPS_FILE.testzip()
+                        CPS_FILE.setpassword(p.encode("utf-8"))
+                        CPS_FILE.extract(CPS_FILE.infolist()[0])
                         hasPwd = True
                         PWD_JSON.update({FILE_MD5: p})
-                        pwdJson = json.dumps(PWD_JSON, ensure_ascii=False)
+                        pwdJson = json.dumps(PWD_JSON)
                         with open('./Pwd.json', 'w') as f:
-                            f.write(pwdJson.encode('utf-8'))
+                            f.write(pwdJson)
                         break
                     except:
                         pass
@@ -229,19 +238,19 @@ def openZipFile(mFilePos):
                 if(PWD == "skip"):
                     return False
                 try:
-                    CPS_FILE.setpassword(PWD)
-                    CPS_FILE.testzip()
+                    CPS_FILE.setpassword(PWD.encode("utf-8"))
+                    CPS_FILE.extract(CPS_FILE.infolist()[0])
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5: PWD})
-                    pwdJson = json.dumps(PWD_JSON,ensure_ascii=False)
+                    pwdJson = json.dumps(PWD_JSON)
                     with open('./Pwd.json', 'w') as f:
-                        f.write(pwdJson.encode('utf-8'))
+                        f.write(pwdJson)
                 except:
                     print("Password is WRONG !")
-    list=getImageList()
-    imgCache = ["" for i in range(len(list))]
-    IMG_SUM = len(list)
-    postion = 0
+    imgList = getImageList()
+    imgCache = ["" for i in range(len(imgList))]
+    IMG_SUM = len(imgList)
+    mImgPos = 0
     return True
 
 def openRarFile(mFilePos):
@@ -249,28 +258,20 @@ def openRarFile(mFilePos):
     global CPS_FILE
     global imgCache
     global IMG_SUM
-    global postion
-    global list
+    global mImgPos
+    global imgList
     global fileList
+    global PWD_JSON
 
     if not os.path.exists(FILE_URI + fileList[mFilePos]):
         print("error:fileURI not exists")
         exit()
-    #StartTime = time.time()
-    FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
-    #print(time.time() - StartTime)
-
-    try:
-        with open('./Pwd.json','r') as f:
-            pwdJson = f.read()
-    except:
-        with open('./Pwd.json','w') as f:
-            f.write('')
-        pwdJson = ''
-    try:
-        PWD_JSON = json.JSONDecoder().decode(pwdJson)
-    except:
-        PWD_JSON = {}
+    #st = time.time()
+    if(USE_FILE_MD5):
+        FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
+    else:
+        FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
+    #print("getFileMD5: %f"%(time.time() - st))
 
     CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
     if(len(CPS_FILE.infolist()) != 0):
@@ -280,10 +281,12 @@ def openRarFile(mFilePos):
 
     if(CPS_FILE.needs_password()):
         PWD = ""
+        sReload = True
         try:
             PWD = PWD_JSON[FILE_MD5]
             CPS_FILE.setpassword(PWD)
-            CPS_FILE.testrar()
+            #CPS_FILE.testrar()
+            sReload = False
         except:
             hasPwd = False
             try:
@@ -294,12 +297,13 @@ def openRarFile(mFilePos):
                 for p in PWD_DEFAULT:
                     try:
                         CPS_FILE.setpassword(p)
-                        CPS_FILE.testrar()
+                        #CPS_FILE.testrar()
                         hasPwd = True
+                        PWD = p
                         PWD_JSON.update({FILE_MD5:p})
-                        pwdJson = json.dumps(PWD_JSON,ensure_ascii=False)
+                        pwdJson = json.dumps(PWD_JSON)
                         with open('./Pwd.json','w') as f:
-                            f.write(pwdJson.encode('utf-8'))
+                            f.write(pwdJson)
                         break
                     except:
                         pass
@@ -310,26 +314,33 @@ def openRarFile(mFilePos):
                     return False
                 try:
                     CPS_FILE.setpassword(PWD)
-                    CPS_FILE.testrar()
+                    #CPS_FILE.testrar()
                     hasPwd = True
                     PWD_JSON.update({FILE_MD5:PWD})
-                    pwdJson = json.dumps(PWD_JSON,ensure_ascii=False)
+                    pwdJson = json.dumps(PWD_JSON)
                     with open('./Pwd.json','w') as f:
-                        f.write(pwdJson.encode('utf-8'))
+                        f.write(pwdJson)
                 except:
                     print("Password is WRONG !")
         #try:
         #    CPS_FILE.testrar()
         #except:
         #    return False
-        CPS_FILE.close()
-        CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
-        CPS_FILE.setpassword(PWD)
+        if(sReload):
+            CPS_FILE.close()
+            CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+            CPS_FILE.setpassword(PWD)
+            #CPS_FILE.testrar()
 
-    list=getImageList()
-    imgCache = ["" for i in range(len(list))]
-    IMG_SUM = len(list)
-    postion = 0
+    imgList = getImageList()
+    #while(len(imgList) == 0):
+    #    CPS_FILE.close()
+    #    CPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+    #    CPS_FILE.setpassword(PWD)
+    #    CPS_FILE.testrar()
+    imgCache = ["" for i in range(len(imgList))]
+    IMG_SUM = len(imgList)
+    mImgPos = 0
     return True
 
 '''入口'''
@@ -346,6 +357,18 @@ if __name__ == '__main__':
     Lock = threading.Lock()
     SLIDE_START = False
 
+    try:
+        with open('./Pwd.json','r') as f:
+            pwdJson = f.read()
+    except:
+        with open('./Pwd.json','w') as f:
+            f.write('')
+        pwdJson = ''
+    try:
+        PWD_JSON = json.JSONDecoder().decode(pwdJson)
+    except:
+        PWD_JSON = {}
+
     root = tk.Tk()
     root.geometry("800x600")
     root.bind("<Button-1>", changePic)
@@ -354,10 +377,10 @@ if __name__ == '__main__':
     w_box = 600
     h_box = 550
 
-    while(not openFile(mFilePos)):
+    while(not openFile()):
         del fileList[mFilePos]
 
     label = tk.Label(root, image="", width=w_box, height=h_box)
     label.pack(padx=15, pady=15, expand = 1, fill = "both")
-    ShowAjoke(root,label,list[postion])
+    ShowAjoke(root,label)
     root.mainloop()
