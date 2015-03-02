@@ -3,20 +3,20 @@
 
 import io
 import urllib
-from PIL import Image
-import PIL
-from PIL.ImageTk import *
 import json
-try:
-    import Tkinter as tk
-except:
-    import tkinter as tk
 import os
 import rarfile
 import hashlib
 import threading
 import time
 import zipfile
+import PIL
+from PIL import Image
+from PIL.ImageTk import *
+try:
+    import Tkinter as tk
+except:
+    import tkinter as tk
 
 BACK_IMG = 1
 NEXT_IMG = 2
@@ -88,7 +88,7 @@ def ShowAjoke(root,label):
                     badFile = False
                 except Exception as ex:
                     #print("mFilePos" + str(mFilePos))
-                    #print("File Name: " + fileList[mFilePos])
+                    print("File Name: " + fileList[mFilePos])
                     #print(ex)
                     del fileList[mFilePos]
                     while(not openFile()):
@@ -100,8 +100,13 @@ def ShowAjoke(root,label):
         imgCache[mImgPos] = pil_image
     else:
         pil_image = imgCache[mImgPos]
+    fileName = imgInfo.filename.split('/')[-1]
+    try:
+        fileName = fileName.encode('cp437')
+        fileName = fileName.decode("gbk")
+    except:
+        pass
 
-    flieName = imgInfo.filename.split('/')[-1]
     w, h = pil_image.size
     #print root.winfo_height()
     if(root.winfo_height() != 1):
@@ -113,7 +118,7 @@ def ShowAjoke(root,label):
     #print h_box
     pil_image_resized = resize(w, h, w_box, h_box, pil_image)
     wr, hr = pil_image_resized.size
-    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos + 1, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, flieName, fileList[mFilePos])
+    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos + 1, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, fileName, fileList[mFilePos].encode("utf-8").decode("utf-8"))
     root.title(sf)
 
     tk_img = PhotoImage(pil_image_resized)
@@ -171,6 +176,7 @@ def onKeyPress(ev):
             slideT.start()
 
 def openFile():
+    #TODO:用对话框输入密码
     global mFilePos
     mFilePos %= len(fileList)
     #print(fileList[mFilePos])
@@ -358,6 +364,7 @@ def openRarFile(mFilePos):
 
 '''入口'''
 if __name__ == '__main__':
+    #TODO:用对话框输入路径
     FILE_URI = input("Please input uri: ")
     if (FILE_URI == ""):
         FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
