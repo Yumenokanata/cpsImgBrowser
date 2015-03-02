@@ -101,7 +101,7 @@ def ShowAjoke(root,label):
     else:
         pil_image = imgCache[mImgPos]
 
-    flieName = imgInfo.filename.split('\\')[-1]
+    flieName = imgInfo.filename.split('/')[-1]
     w, h = pil_image.size
     #print root.winfo_height()
     if(root.winfo_height() != 1):
@@ -113,7 +113,7 @@ def ShowAjoke(root,label):
     #print h_box
     pil_image_resized = resize(w, h, w_box, h_box, pil_image)
     wr, hr = pil_image_resized.size
-    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, flieName, fileList[mFilePos])
+    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos + 1, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, flieName, fileList[mFilePos])
     root.title(sf)
 
     tk_img = PhotoImage(pil_image_resized)
@@ -361,8 +361,6 @@ if __name__ == '__main__':
     FILE_URI = input("Please input uri: ")
     if (FILE_URI == ""):
         FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
-        FILE_URI = "/media/bush/未知文件夹2/TDDOWNLOAD/C87全彩，非全彩汉化本分类合集第四弹（52本，1.79G，01.18-01.24）/全彩（10）/"
-        #FILE_URI = "/media/bush/未知文件夹2/TDDOWNLOAD/C87全彩，非全彩汉化本分类合集第四弹（52本，1.79G，01.18-01.24）/非全彩（42）/"
 
     fileList = os.listdir(FILE_URI)
     fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'zip')]
