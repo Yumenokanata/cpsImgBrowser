@@ -43,6 +43,9 @@ class LoadImgTh(threading.Thread):
         global changePic
         global mImgPos
 
+        global nTime
+        nTime = time.time()
+
         self.nextLoadImgPos = 0
         self.nowFilePos = -1
 
@@ -98,6 +101,8 @@ class LoadImgTh(threading.Thread):
             CPS_FILELock.release()
 
             if(self.shouldRefreshImg):
+                print("Change Img Time: %f " % (time.time() - nTime))
+                st = time.time()
                 self.shouldRefreshImg = FALSE
                 imgName = self.imgList[self.nowShowImgPos].filename.split('/')[-1]
                 try:
@@ -126,7 +131,7 @@ class LoadImgTh(threading.Thread):
                 label.image= tk_img
                 label.pack(padx=5, pady=5)
 
-                #print("Sum Load Img Time: " + str(time.time() - StartTime))
+                print("Sum Load Img Time: " + str(time.time() - st))
 
 def slide():
     print ("slide")
@@ -171,11 +176,14 @@ def getImageList(cps):
 def ShowPic(value):
     global changeImgLock
     global mImgPos
+    global nTime
     changeImgLock.acquire()
     if(value == BACK_IMG):
         mImgPos -= 1
     elif(value == NEXT_IMG):
         mImgPos += 1
+
+    nTime = time.time()
     changeImgLock.release()
 
 def mouseEvent(ev):
@@ -494,6 +502,7 @@ if __name__ == '__main__':
     openFile(CURRENT_FILE)
 
     task = LoadImgTh()
+    task.setDaemon(TRUE)
     task.start()
 
     label = tk.Label(root, image="", width=w_box, height=h_box)
