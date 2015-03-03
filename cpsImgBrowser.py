@@ -23,7 +23,7 @@ SLIDE_TIME = 3
 USE_FILE_MD5 = FALSE
 BACK_FILE = -1
 NEXT_FILE = 0
-CURRENT_FILE = 0
+CURRENT_FILE = 1
 
 changePic = FALSE
 
@@ -55,18 +55,18 @@ class LoadImgTh(threading.Thread):
                 self.imgCache = ["" for i in range(len(self.imgList))]
                 changeImgLock.acquire()
                 mImgPos = 0
-                self.shouldReflashImg = TRUE
                 changeImgLock.release()
                 self.imgNum = len(self.imgList)
                 self.nowShowImgPos = 0
                 self.nextLoadImgPos = 0
                 self.shouldLoadImg = TRUE
+                self.shouldRefreshImg = TRUE
             else:
                 changeImgLock.acquire()
                 if(self.nowShowImgPos != mImgPos):
                     mImgPos %= len(self.imgList)
                     self.nowShowImgPos = mImgPos
-                    self.shouldReflashImg = TRUE
+                    self.shouldRefreshImg = TRUE
                 changeImgLock.release()
 
                 if(self.imgCache[self.nowShowImgPos] == ""):
@@ -97,8 +97,8 @@ class LoadImgTh(threading.Thread):
                     print(ex)
             CPS_FILELock.release()
 
-            if(self.shouldReflashImg):
-                self.shouldReflashImg = FALSE
+            if(self.shouldRefreshImg):
+                self.shouldRefreshImg = FALSE
                 imgName = self.imgList[self.nowShowImgPos].filename.split('/')[-1]
                 try:
                     imgName = imgName.encode('cp437')
@@ -106,7 +106,8 @@ class LoadImgTh(threading.Thread):
                 except:
                     pass
 
-                w, h = pil_image.size
+                showImg = self.imgCache[self.nowShowImgPos]
+                w, h = showImg.size
                 #print root.winfo_height()
                 if(root.winfo_height() != 1):
                     scale = root.winfo_height() / 550.0
@@ -115,12 +116,12 @@ class LoadImgTh(threading.Thread):
                 w_box = 600 * scale
                 h_box = 550 * scale
                 #print h_box
-                pil_image_resized = resizePic(w, h, w_box, h_box, pil_image)
-                wr, hr = pil_image_resized.size
-                titleS = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(self.nowFilePos + 1, len(FILE_LIST), self.nextLoadImgPos + 1, self.imgNum, wr, hr, imgName, self.nowFilename)
+                showImgResized = resizePic(w, h, w_box, h_box, showImg)
+                wr, hr = showImgResized.size
+                titleS = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(self.nowFilePos + 1, len(FILE_LIST), self.nowShowImgPos + 1, self.imgNum, wr, hr, imgName, self.nowFilename)
                 root.title(titleS)
 
-                tk_img = PIL.ImageTk.PhotoImage(pil_image_resized)
+                tk_img = PIL.ImageTk.PhotoImage(showImgResized)
                 label.configure(image = tk_img)
                 label.image= tk_img
                 label.pack(padx=5, pady=5)
@@ -210,14 +211,12 @@ def onKeyPress(ev):
             slideLock.acquire()
             SLIDE_START = FALSE
             slideLock.release()
-
-        openFile(BACK_FILE)
+        openFile(NEXT_FILE)
     elif(ev.keycode == 38):
         if (slideT.isAlive()):
             slideLock.acquire()
             SLIDE_START = FALSE
             slideLock.release()
-
         openFile(BACK_FILE)
     elif(ev.keycode == 43):
         if (slideT.isAlive()):
