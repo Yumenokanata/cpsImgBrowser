@@ -25,6 +25,7 @@ USE_FILE_MD5 = False
 BACK_FILE = -1
 NEXT_FILE = 0
 CURRENT_FILE = 1
+BAD_FILE = "bad_file"
 
 changePic = False
 
@@ -109,7 +110,9 @@ class guardTh(threading.Thread):
                 # print("Change Img Time: %f " % (time.time() - nTime))
                 st = time.time()
                 self.shouldRefreshImg = False
-                imgName = self.imgList[self.nowShowImgPos].filename.split('/')[-1]
+                imgName = self.imgList[self.nowShowImgPos].filename
+                imgName = imgName.replace("/", "\\")
+                imgName = imgName.split('\\')[-1]
                 try:
                     imgName = imgName.encode('cp437')
                     imgName = imgName.decode("gbk")
@@ -117,6 +120,10 @@ class guardTh(threading.Thread):
                     pass
 
                 showImg = self.imgCache[self.nowShowImgPos]
+                if showImg is BAD_FILE:
+                    label.configure(image="")
+                    label['text'] = "Bad File"
+                    continue
                 w, h = showImg.size
                 if root.winfo_height() != 1:
                     scale = root.winfo_height() / 550.0
@@ -137,6 +144,7 @@ class guardTh(threading.Thread):
                 root.title(title)
 
                 tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
+                label['text']=""
                 label.configure(image = tk_img)
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
@@ -162,14 +170,15 @@ class loadImgTh(threading.Thread):
                 # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
                 try:
                     data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
+                    try:
+                        pil_image = PIL.Image.open(io.BytesIO(data))
+                    except Exception as ex:
+                        print(ex)
+                        pil_image = _NONE
                 except Exception as ex:
                     print(ex)
-
-                try:
-                    pil_image = PIL.Image.open(io.BytesIO(data))
-                except Exception as ex:
-                    print(ex)
-                    pil_image = _NONE
+                    # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
+                    pil_image = BAD_FILE
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
 
             mImgLoadQueueLock.acquire()
@@ -217,12 +226,12 @@ def getFileMD5(uri):
     md5file.close()
     return md5
 
-def resizePic(w, h, w_box, h_box, pil_image):
-    f1 = 1.0*w_box/w
-    f2 = 1.0*h_box/h
+def resizePic(w, h, rw, rh, pil_image):
+    f1 = 1.0 * rw / w
+    f2 = 1.0 * rh / h
     factor = min([f1, f2])
-    width = int(w*factor)
-    height = int(h*factor)
+    width = int(w * factor)
+    height = int(h * factor)
     return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
 
 def getImageList(cps):
@@ -318,6 +327,9 @@ def openFile(direct):
     global CPS_FILE
     global FILE_LIST
     global FILE_URI
+    global label
+    label.configure(image="")
+    label['text'] = "Loading"
 
     file_pos = nextCanReadFile(direct, mFilePos)
     return_fruit = False
@@ -388,7 +400,7 @@ def openZipFile(_filename):
     try:
         t_cps_file.testzip()
         needs_password = False
-    except BadZipFile:
+    except:
         needs_password = True
 
     if needs_password:
@@ -397,7 +409,7 @@ def openZipFile(_filename):
             if not pwd:
                 raise Exception
             t_cps_file.setpassword(pwd.encode("utf-8"))
-            t_cps_file.open(listT[0])
+            t_cps_file.open(t_list[0])
         except:
             has_pwd = False
             try:
@@ -408,7 +420,7 @@ def openZipFile(_filename):
                 for p in pwd_default:
                     try:
                         t_cps_file.setpassword(p.encode("utf-8"))
-                        t_cps_file.open(listT[0])
+                        t_cps_file.open(t_list[0])
                         has_pwd = True
                         PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
                         break
@@ -423,7 +435,7 @@ def openZipFile(_filename):
                     return False
                 try:
                     t_cps_file.setpassword(pwd.encode("utf-8"))
-                    t_cps_file.open(listT[0])
+                    t_cps_file.open(t_list[0])
                     has_pwd = True
                     PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
                 except Exception as ex:
@@ -526,8 +538,8 @@ if __name__ == '__main__':
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
     mWinChanged = False
-    w_box = 600
-    h_box = 550
+    label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold')
+    label.pack(padx=15, pady=15, expand=1, fill="both")
 
     if len(sys.argv) < 2:
         fd = LoadFileDialog(root, title="要打开的文件")
@@ -547,7 +559,7 @@ if __name__ == '__main__':
             t_filename = FILE_URI.split("/")[-1]
 
     fileNameList = os.listdir(FILE_URI)
-    fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('rar'))]
+    fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
     FILE_LIST = [{"filename": fn, "CanRead": TRUE} for fn in fileNameList]
     try:
         mFilePos = FILE_LIST.index({"filename": t_filename, "CanRead": TRUE})
@@ -595,6 +607,4 @@ if __name__ == '__main__':
     guardTask.start()
     loadTask.start()
 
-    label = tk.Label(root, image=_NONE, width=w_box, height=h_box)
-    label.pack(padx=15, pady=15, expand=1, fill="both")
     root.mainloop()
