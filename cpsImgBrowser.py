@@ -333,7 +333,10 @@ def openFile(direct):
             file_md5 = getFileMD5(FILE_URI + filename)
         else:
             file_md5 = getStringMD5(FILE_URI + filename)
-        PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
+        try:
+            PWD_JSON[file_md5]
+        except:
+            PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
         FILE_LIST[file_pos]["CanRead"] = False
         file_pos = nextCanReadFile(direct, file_pos)
         filename = FILE_LIST[file_pos]["filename"]
@@ -416,6 +419,7 @@ def openZipFile(_filename):
                 while pwd == _NONE:
                     pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
                 if pwd == "skip":
+                    PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                     return False
                 try:
                     t_cps_file.setpassword(pwd.encode("utf-8"))
@@ -491,6 +495,7 @@ def openRarFile(_filename):
                 while pwd == _NONE:
                     pwd = askstring(title='请输入密码', prompt="RaR File: " + _filename + "\n输入\"skip\"跳过此文件")
                 if pwd == "skip":
+                    PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                     return False
                 try:
                     t_cps_file.setpassword(pwd)
