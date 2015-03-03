@@ -25,62 +25,107 @@ BACK_FILE = -1
 NEXT_FILE = 0
 CURRENT_FILE = 0
 
+changePic = FALSE
+
 class LoadImgTh(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
 
     def run(self):
-        global mPosLock
-        global imgCacheLock
+        #global mPosLock
+        global changeImgLock
         global CPS_FILELock
-        global mImgPos
         global mFilePos
-        global imC
-        global fileList
-        global imgList
+        global FILE_LIST
         global CPS_FILE
-        global imgCache
+        global root
+        global label
+        global changePic
+        global mImgPos
 
-        self.nowImgPos = 0
-        self.nowFilename = ""
+        self.nextLoadImgPos = 0
+        self.nowFilePos = -1
 
         while(True):
-            mPosLock.acquire()
-            if(self.nowFilename != fileList[mFilePos]):
-                self.nowFilename = fileList[mFilePos]
-                self.nowImgPos = mImgPos
-                imgCacheLock.acquire()
-                imgCache = ["" for i in range(len(imgList))]
-                imgCacheLock.release()
-            else:
-                if(mImgPos != self.nowImgPos):
-                    self.nowImgPos = mImgPos
-                else:
-                    self.nowImgPos += 1
-            mPosLock.release()
-
-            #imgCacheLock.acquire()
-            list_num = len(imgList)
-            self.nowImgPos %= list_num
-            n = 0
-            while(imgCache[self.nowImgPos] != ""):
-                n += 1
-                self.nowImgPos += 1
-                self.nowImgPos %= list_num
-                if(n >= list_num):
-                    break
-            #imgCacheLock.release()
-
             CPS_FILELock.acquire()
-            #st = time.time()
-            data = CPS_FILE.read(imgList[self.nowImgPos])
-            #print("%d LoadImg Time: %f" % (mImgPos, (time.time() - st)))
-            pil_image = PIL.Image.open(io.BytesIO(data))
+            if(self.nowFilePos != mFilePos):
+                self.nowFilePos = mFilePos
+                self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
+                self.imgList = getImageList(CPS_FILE)
+                self.imgCache = ["" for i in range(len(self.imgList))]
+                changeImgLock.acquire()
+                mImgPos = 0
+                self.shouldReflashImg = TRUE
+                changeImgLock.release()
+                self.imgNum = len(self.imgList)
+                self.nowShowImgPos = 0
+                self.nextLoadImgPos = 0
+                self.shouldLoadImg = TRUE
+            else:
+                changeImgLock.acquire()
+                if(self.nowShowImgPos != mImgPos):
+                    mImgPos %= len(self.imgList)
+                    self.nowShowImgPos = mImgPos
+                    self.shouldReflashImg = TRUE
+                changeImgLock.release()
+
+                if(self.imgCache[self.nowShowImgPos] == ""):
+                    self.nextLoadImgPos = self.nowShowImgPos
+                else:
+                    self.nextLoadImgPos += 1
+                    list_num = len(self.imgList)
+                    self.nextLoadImgPos %= list_num
+                    n = 0
+                    while(self.imgCache[self.nextLoadImgPos] != ""):
+                        n += 1
+                        self.nextLoadImgPos += 1
+                        self.nextLoadImgPos %= list_num
+                        if(n >= list_num):
+                            self.shouldLoadImg = FALSE
+                            break
+
+            if(self.shouldLoadImg):
+                #st = time.time()
+                self.nowImgInfo = self.imgList[self.nextLoadImgPos]
+                data = CPS_FILE.read(self.nowImgInfo)
+                #print("%d LoadImg Time: %f" % (self.nowShowImgPos, (time.time() - st)))
+                try:
+                    pil_image = PIL.Image.open(io.BytesIO(data))
+                    print("Load Img: %d" % (self.nextLoadImgPos))
+                    self.imgCache[self.nextLoadImgPos] = pil_image
+                except Exception as ex:
+                    print(ex)
             CPS_FILELock.release()
 
-            imgCacheLock.acquire()
-            imgCache[self.nowImgPos] = pil_image
-            imgCacheLock.release()
+            if(self.shouldReflashImg):
+                self.shouldReflashImg = FALSE
+                imgName = self.imgList[self.nowShowImgPos].filename.split('/')[-1]
+                try:
+                    imgName = imgName.encode('cp437')
+                    imgName = imgName.decode("gbk")
+                except:
+                    pass
+
+                w, h = pil_image.size
+                #print root.winfo_height()
+                if(root.winfo_height() != 1):
+                    scale = root.winfo_height() / 550.0
+                else:
+                    scale = 600 / 550.0
+                w_box = 600 * scale
+                h_box = 550 * scale
+                #print h_box
+                pil_image_resized = resizePic(w, h, w_box, h_box, pil_image)
+                wr, hr = pil_image_resized.size
+                titleS = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(self.nowFilePos + 1, len(FILE_LIST), self.nextLoadImgPos + 1, self.imgNum, wr, hr, imgName, self.nowFilename)
+                root.title(titleS)
+
+                tk_img = PIL.ImageTk.PhotoImage(pil_image_resized)
+                label.configure(image = tk_img)
+                label.image= tk_img
+                label.pack(padx=5, pady=5)
+
+                #print("Sum Load Img Time: " + str(time.time() - StartTime))
 
 def slide():
     print ("slide")
@@ -123,69 +168,18 @@ def getImageList(cps):
     return tImgList
 
 def ShowPic(value):
+    global changeImgLock
     global mImgPos
-    global mPosLock
-    mPosLock.acquire()
+    changeImgLock.acquire()
     if(value == BACK_IMG):
         mImgPos -= 1
     elif(value == NEXT_IMG):
         mImgPos += 1
-    mImgPos %= len(imgList)
-    mPosLock.release()
-    ShowAjoke(root, label)
+    changeImgLock.release()
 
-def ShowAjoke(root,label):
-    StartTime = time.time()
-    global imgCacheLock
-    global mImgPos
-    global mFilePos
-    global fileList
-    global imgList
-    global imgCache
-
-    imgInfo = imgList[mImgPos]
-
-    imgCacheLock.acquire()
-    pil_image = imgCache[mImgPos]
-    imgCacheLock.release()
-    while(pil_image == ""):
-        time.sleep(1)
-        imgCacheLock.acquire()
-        pil_image = imgCache[mImgPos]
-        imgCacheLock.release()
-
-    fileName = imgInfo.filename.split('/')[-1]
-    try:
-        fileName = fileName.encode('cp437')
-        fileName = fileName.decode("gbk")
-    except:
-        pass
-
-    w, h = pil_image.size
-    #print root.winfo_height()
-    if(root.winfo_height() != 1):
-        scale = root.winfo_height() / 550.0
-    else:
-        scale = 600 / 550.0
-    w_box = 600 * scale
-    h_box = 550 * scale
-    #print h_box
-    pil_image_resized = resizePic(w, h, w_box, h_box, pil_image)
-    wr, hr = pil_image_resized.size
-    sf = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(mFilePos + 1, len(fileList), mImgPos + 1, IMG_SUM, wr, hr, fileName, fileList[mFilePos].encode("utf-8").decode("utf-8"))
-    root.title(sf)
-
-    tk_img = PIL.ImageTk.PhotoImage(pil_image_resized)
-    label.configure(image = tk_img)
-    label.image= tk_img
-    label.pack(padx=5, pady=5)
-
-    print("Sum Load Img Time: " + str(time.time() - StartTime))
-
-def changePic(ev):
+def mouseEvent(ev):
     global slideT
     global SLIDE_START
-    global mFilePos
     if (ev.x > root.winfo_width() / 3.0 * 2.0):
         ShowPic(NEXT_IMG)
     elif(ev.x < root.winfo_width() / 3.0):
@@ -195,22 +189,17 @@ def changePic(ev):
             slideLock.acquire()
             SLIDE_START = FALSE
             slideLock.release()
-
         openFile(NEXT_FILE)
-        ShowAjoke(root, label)
     elif(ev.y < root.winfo_height() / 3.0):
         if (slideT.isAlive()):
             slideLock.acquire()
             SLIDE_START = FALSE
             slideLock.release()
-
         openFile(BACK_FILE)
-        ShowAjoke(root, label)
 
 def onKeyPress(ev):
     global slideT
     global SLIDE_START
-    global mFilePos
     #print(ev.keycode)
     if ( ev.keycode == 111 or ev.keycode == 113):
         ShowPic(BACK_IMG)
@@ -223,7 +212,6 @@ def onKeyPress(ev):
             slideLock.release()
 
         openFile(BACK_FILE)
-        ShowAjoke(root, label)
     elif(ev.keycode == 38):
         if (slideT.isAlive()):
             slideLock.acquire()
@@ -231,7 +219,6 @@ def onKeyPress(ev):
             slideLock.release()
 
         openFile(BACK_FILE)
-        ShowAjoke(root, label)
     elif(ev.keycode == 43):
         if (slideT.isAlive()):
             slideLock.acquire()
@@ -244,70 +231,69 @@ def onKeyPress(ev):
             slideT = threading.Timer(0, slide)
             slideT.start()
 
+def nextCanReadFile(direct, nowFilePos):
+    global FILE_LIST
+    if(direct == NEXT_FILE):
+        nowFilePos += 1
+    elif(direct == BACK_FILE):
+        nowFilePos -= 1
+    nowFilePos %= len(FILE_LIST)
+    while(FILE_LIST[nowFilePos]["CanRead"] == FALSE):
+        if(direct == BACK_FILE):
+            nowFilePos -= 1
+        else:
+            nowFilePos += 1
+        nowFilePos %= len(FILE_LIST)
+    return nowFilePos
+
 def openFile(direct):
-    global mPosLock
     global CPS_FILELock
     global mFilePos
     global CPS_FILE
-    global imgCache
-    global IMG_SUM
-    global imgList
-    global mImgPos
-    mPosLock.acquire()
-    if(direct == NEXT_FILE):
-        mFilePos += 1
-    elif(direct == BACK_FILE):
-        mFilePos -= 1
-    mFilePos %= len(fileList)
-    mPosLock.release()
+    global FILE_LIST
+    tFilePos = nextCanReadFile(direct, mFilePos)
     returnFruit = FALSE
-    #print(fileList[mFilePos])
-    if(fileList[mFilePos].split('.')[-1].lower() == 'rar'):
-        returnFruit = openRarFile(mFilePos)
-    elif(fileList[mFilePos].split('.')[-1].lower() == 'zip'):
-        returnFruit = openZipFile(mFilePos)
+    #print(FILE_LIST[tFilePos]["filename"])
+    if(FILE_LIST[tFilePos]["filename"].split('.')[-1].lower() == 'rar'):
+        returnFruit = openRarFile(tFilePos)
+    elif(FILE_LIST[tFilePos]["filename"].split('.')[-1].lower() == 'zip'):
+        returnFruit = openZipFile(tFilePos)
 
     while(not returnFruit):
-        mPosLock.acquire()
-        del fileList[mFilePos]
-        mFilePos += direct
-        mFilePos %= len(fileList)
-        mPosLock.release()
-        if(fileList[mFilePos].split('.')[-1].lower() == 'rar'):
-            returnFruit = openRarFile(mFilePos)
-        elif(fileList[mFilePos].split('.')[-1].lower() == 'zip'):
-            returnFruit = openZipFile(mFilePos)
+        FILE_LIST[tFilePos]["CanRead"] = FALSE
+        tFilePos = nextCanReadFile(direct, tFilePos)
+        if(FILE_LIST[tFilePos]["filename"].split('.')[-1].lower() == 'rar'):
+            returnFruit = openRarFile(tFilePos)
+        elif(FILE_LIST[tFilePos]["filename"].split('.')[-1].lower() == 'zip'):
+            returnFruit = openZipFile(tFilePos)
 
     CPS_FILELock.acquire()
     CPS_FILE = returnFruit
-    imgList = getImageList(CPS_FILE)
+    mFilePos = tFilePos
     CPS_FILELock.release()
 
-    mPosLock.acquire()
-    mImgPos = 0
-    IMG_SUM = len(imgList)
-    mPosLock.release()
     return returnFruit
 
-def openZipFile(mFilePos):
+def openZipFile(tFilePos):
     global FILE_URI
-    global fileList
+    global FILE_LIST
     global PWD_JSON
 
-    if not os.path.exists(FILE_URI + fileList[mFilePos]):
+    tFilename = FILE_LIST[tFilePos]["filename"]
+    if not os.path.exists(FILE_URI + tFilename):
         print("error:fileURI not exists")
         exit()
     #StartTime = time.time()
     if(USE_FILE_MD5):
-        FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
+        FILE_MD5 = getFileMD5(FILE_URI + tFilename)
     else:
-        FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
+        FILE_MD5 = getStringMD5(FILE_URI + tFilename)
     #print(time.time() - StartTime)
 
     try:
-        tCPS_FILE = zipfile.ZipFile(FILE_URI + fileList[mFilePos])
+        tCPS_FILE = zipfile.ZipFile(FILE_URI + tFilename)
     except:
-        print(fileList[mFilePos] + " open fail")
+        print(tFilename + " open fail")
         return FALSE
     if(len(tCPS_FILE.infolist()) != 0):
         listT = getImageList(tCPS_FILE)
@@ -346,7 +332,7 @@ def openZipFile(mFilePos):
             while(not hasPwd):
                 PWD = ""
                 while(PWD == ""):
-                    PWD = askstring(title = '请输入密码',prompt = "Zip File: " + fileList[mFilePos] + "\n输入\"skip\"跳过此文件")
+                    PWD = askstring(title = '请输入密码',prompt = "Zip File: " + tFilename + "\n输入\"skip\"跳过此文件")
                 if(PWD == "skip"):
                     return FALSE
                 try:
@@ -362,25 +348,26 @@ def openZipFile(mFilePos):
                     print("Password is WRONG !")
     return tCPS_FILE
 
-def openRarFile(mFilePos):
+def openRarFile(tFilePos):
     global FILE_URI
-    global fileList
+    global FILE_LIST
     global PWD_JSON
 
-    if not os.path.exists(FILE_URI + fileList[mFilePos]):
+    tFilename = FILE_LIST[tFilePos]["filename"]
+    if not os.path.exists(FILE_URI + tFilename):
         print("error:fileURI not exists")
         exit()
     #st = time.time()
     if(USE_FILE_MD5):
-        FILE_MD5 = getFileMD5(FILE_URI + fileList[mFilePos])
+        FILE_MD5 = getFileMD5(FILE_URI + tFilename)
     else:
-        FILE_MD5 = getStringMD5(FILE_URI + fileList[mFilePos])
+        FILE_MD5 = getStringMD5(FILE_URI + tFilename)
     #print("getFileMD5: %f"%(time.time() - st))
 
     try:
-        tCPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+        tCPS_FILE = rarfile.RarFile(FILE_URI + tFilename)
     except:
-        print(fileList[mFilePos] + " open fail")
+        print(tFilename + " open fail")
         return FALSE
     if(len(tCPS_FILE.infolist()) != 0):
         listT = getImageList(tCPS_FILE)
@@ -420,7 +407,7 @@ def openRarFile(mFilePos):
             while(not hasPwd):
                 PWD = ""
                 while(PWD == ""):
-                    PWD = askstring(title = '请输入密码',prompt = "RaR File: " + fileList[mFilePos] + "\n输入\"skip\"跳过此文件")
+                    PWD = askstring(title = '请输入密码',prompt = "RaR File: " + tFilename + "\n输入\"skip\"跳过此文件")
                 if(PWD == "skip"):
                     return FALSE
                 try:
@@ -440,22 +427,17 @@ def openRarFile(mFilePos):
         #    return FALSE
         if(sReload):
             tCPS_FILE.close()
-            tCPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
+            tCPS_FILE = rarfile.RarFile(FILE_URI + tFilename)
             tCPS_FILE.setpassword(PWD)
             #CPS_FILE.testrar()
 
-    #while(len(imgList) == 0):
-    #    tCPS_FILE.close()
-    #    tCPS_FILE = rarfile.RarFile(FILE_URI + fileList[mFilePos])
-    #    tCPS_FILE.setpassword(PWD)
-    #    tCPS_FILE.testrar()
     return tCPS_FILE
 
 '''入口'''
 if __name__ == '__main__':
     root = tk.Tk()
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width())/2, (600 - root.winfo_height())/2) )
-    root.bind("<Button-1>", changePic)
+    root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
     mWinChanged = FALSE
     w_box = 600
@@ -483,16 +465,18 @@ if __name__ == '__main__':
     #    FILE_URI = "/media/bush/Download/IDM Downloads/Compressed/"
     #mFilePos = 0
 
-    fileList = os.listdir(FILE_URI)
-    fileList = [f for f in fileList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'rar')]
-    mFilePos = 0
-    if(tFilename in fileList):
-        mFilePos = fileList.index(tFilename)
+    fileNameList = os.listdir(FILE_URI)
+    fileNameList = [f for f in fileNameList if (f.split('.')[-1].lower() == 'rar' or f.split('.')[-1].lower() == 'rar')]
+    FILE_LIST = [{"filename": fn, "CanRead": TRUE} for fn in fileNameList]
+    try:
+        mFilePos = FILE_LIST.index({"filename": tFilename, "CanRead": TRUE})
+    except:
+        mFilePos = 0
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
-    mPosLock = threading.Lock()
-    imgCacheLock = threading.Lock()
+    #mPosLock = threading.Lock()
+    changeImgLock = threading.Lock()
     CPS_FILELock = threading.Lock()
     SLIDE_START = FALSE
 
@@ -515,5 +499,4 @@ if __name__ == '__main__':
 
     label = tk.Label(root, image="", width=w_box, height=h_box)
     label.pack(padx=15, pady=15, expand = 1, fill = "both")
-    ShowAjoke(root,label)
     root.mainloop()
