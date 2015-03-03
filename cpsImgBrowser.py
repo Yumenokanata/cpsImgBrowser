@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
 
-_NONE = _NONE
+_NONE = ""
 BACK_IMG = 1
 NEXT_IMG = 2
 SLIDE_TIME = 3
@@ -28,9 +28,18 @@ CURRENT_FILE = 1
 
 changePic = FALSE
 
-class LoadImgTh(threading.Thread):
+class guardTh(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
+        self.nextLoadImgPos = 0
+        self.nowFilePos = -1
+        self.nowFilename = _NONE
+        self.nowShowImgPos = 0
+        self.imgCache = []
+        self.imgList = []
+        self.imgNum = 0
+        self.shouldLoadImg = FALSE
+        self.shouldRefreshImg = FALSE
 
     def run(self):
         global mImgLoadQueueLock
@@ -48,10 +57,7 @@ class LoadImgTh(threading.Thread):
         global nTime
         nTime = time.time()
 
-        self.nextLoadImgPos = 0
-        self.nowFilePos = -1
-
-        while(TRUE):
+        while TRUE:
             CPS_FILELock.acquire()
             if self.nowFilePos != mFilePos:
                 self.nowFilePos = mFilePos
@@ -70,11 +76,9 @@ class LoadImgTh(threading.Thread):
                 willLoadImgQueue = {
                     "CPS_FILE": CPS_FILE,
                     "nowFilePos": self.nowFilePos,
-                    "imgCache": imgCache,
-                    "willLoadImgQueue": [{
-                            "imgInfo": self.imgList[0],
-                            "imgPos": 0
-                        }]
+                    "imgCache": self.imgCache,
+                    "willLoadImgQueue": [{"imgInfo": self.imgList[0],
+                                          "imgPos": 0}]
                     }
                 mImgLoadQueueLock.release()
             else:
@@ -83,38 +87,34 @@ class LoadImgTh(threading.Thread):
                     mImgPos %= len(self.imgList)
                     self.nowShowImgPos = mImgPos
                     self.shouldRefreshImg = TRUE
+
+                    mImgLoadQueueLock.acquire()
+                    if (not willLoadImgQueue["willLoadImgQueue"]) or willLoadImgQueue["willLoadImgQueue"][0]["imgInfo"] != self.imgList[self.nowShowImgPos]:
+                        willLoadImgQueue["willLoadImgQueue"].insert(0, {"imgInfo": self.imgList[self.nowShowImgPos],
+                                                                        "imgPos": self.nowShowImgPos})
+                    mImgLoadQueueLock.release()
                 changeImgLock.release()
 
-                if not self.imgCache[self.nowShowImgPos]:
-                    self.nextLoadImgPos = self.nowShowImgPos
-                else:
+                self.nextLoadImgPos += 1
+                list_num = len(self.imgList)
+                self.nextLoadImgPos %= list_num
+                n = 0
+                while self.imgCache[self.nextLoadImgPos]:
+                    n += 1
                     self.nextLoadImgPos += 1
-                    list_num = len(self.imgList)
                     self.nextLoadImgPos %= list_num
-                    n = 0
-                    while not self.imgCache[self.nextLoadImgPos]:
-                        n += 1
-                        self.nextLoadImgPos += 1
-                        self.nextLoadImgPos %= list_num
-                        if n >= list_num :
-                            self.shouldLoadImg = FALSE
-                            break
-
-            if self.shouldLoadImg:
-                #st = time.time()
-                tNowImgInfo = self.imgList[self.nextLoadImgPos]
-                data = CPS_FILE.read(tNowImgInfo)
-                #print("%d LoadImg Time: %f" % (self.nowShowImgPos, (time.time() - st)))
-                try:
-                    pil_image = PIL.Image.open(io.BytesIO(data))
-                    print("Load Img: %d" % (self.nextLoadImgPos))
-                    self.imgCache[self.nextLoadImgPos] = pil_image
-                except Exception as ex:
-                    print(ex)
+                    if n >= list_num :
+                        self.shouldLoadImg = FALSE
+                        break
+                if self.shouldLoadImg:
+                    mImgLoadQueueLock.acquire()
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[self.nextLoadImgPos],
+                                                                 "imgPos": self.nextLoadImgPos})
+                    mImgLoadQueueLock.release()
             CPS_FILELock.release()
 
-            if self.shouldRefreshImg:
-                print("Change Img Time: %f " % (time.time() - nTime))
+            if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
+                # print("Change Img Time: %f " % (time.time() - nTime))
                 st = time.time()
                 self.shouldRefreshImg = FALSE
                 imgName = self.imgList[self.nowShowImgPos].filename.split('/')[-1]
@@ -126,7 +126,6 @@ class LoadImgTh(threading.Thread):
 
                 showImg = self.imgCache[self.nowShowImgPos]
                 w, h = showImg.size
-                # print root.winfo_height()
                 if root.winfo_height() != 1:
                     scale = root.winfo_height() / 550.0
                 else:
@@ -135,40 +134,65 @@ class LoadImgTh(threading.Thread):
                 box_height = 550 * scale
                 show_img_resize = resizePic(w, h, box_width, box_height, showImg)
                 wr, hr = show_img_resize.size
-                title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s "%(self.nowFilePos + 1, len(FILE_LIST), self.nowShowImgPos + 1, self.imgNum, wr, hr, imgName, self.nowFilename)
+                title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFilePos + 1,
+                                                                 len(FILE_LIST),
+                                                                 self.nowShowImgPos + 1,
+                                                                 self.imgNum,
+                                                                 wr,
+                                                                 hr,
+                                                                 imgName,
+                                                                 self.nowFilename)
                 root.title(title)
 
-                tk_img = PIL.ImageTk.PhotoImage(showImgResized)
+                tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
                 label.configure(image = tk_img)
-                label.image= tk_img
+                label.image = tk_img
                 label.pack(padx=5, pady=5)
 
-                print("Sum Load Img Time: " + str(time.time() - st))
+                # print("Sum Load Img Time: " + str(time.time() - st))
+        print("guardTh is Over!!")
 
 class loadImgTh(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.mLoadingFilePos = -1
+        self.nowLoadImgInfo = {}
+        self.cpsFile = _NONE
+
     def run(self):
         global mFilePos
         global willLoadImgQueue
+        global mImgLoadQueueLock
 
-        self.mLoadingFilePos = -1
-        self.nowLoadImgInfo = _NONE
-        while(TRUE):
-            if not self.nowLoadImgInfo:
+        while TRUE:
+            if self.nowLoadImgInfo:
+                # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
                 data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
                 try:
                     pil_image = PIL.Image.open(io.BytesIO(data))
                 except Exception as ex:
                     print(ex)
                     pil_image = _NONE
+                # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
 
             mImgLoadQueueLock.acquire()
             if self.mLoadingFilePos is willLoadImgQueue["nowFilePos"]:
-                if not self.nowLoadImgInfo:
+                if self.nowLoadImgInfo:
                     willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
             else:
                 self.cpsFile = willLoadImgQueue["CPS_FILE"]
-            if not willLoadImgQueue["willLoadImgQueue"]:
-                self.nowLoadImgInfo = willLoadImgQueue["willLoadImgQueue"].pop(willLoadImgQueue["willLoadImgQueue"][0])
+                self.mLoadingFilePos = willLoadImgQueue["nowFilePos"]
+
+            self.nowLoadImgInfo = _NONE
+            while TRUE:
+                if not willLoadImgQueue["willLoadImgQueue"]:
+                    self.nowLoadImgInfo = _NONE
+                    break
+                self.nowLoadImgInfo = willLoadImgQueue["willLoadImgQueue"].pop(0)
+                if not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]:
+                    break
+            mImgLoadQueueLock.release()
+        print("loadImgTh is Over!!")
 
 def slide():
     print ("slide")
@@ -533,9 +557,12 @@ if __name__ == '__main__':
 
     openFile(CURRENT_FILE)
 
-    task = LoadImgTh()
-    task.setDaemon(TRUE)
-    task.start()
+    guardTask = guardTh()
+    guardTask.setDaemon(TRUE)
+    loadTask = loadImgTh()
+    loadTask.setDaemon(TRUE)
+    guardTask.start()
+    loadTask.start()
 
     label = tk.Label(root, image=_NONE, width=w_box, height=h_box)
     label.pack(padx=15, pady=15, expand=1, fill="both")
