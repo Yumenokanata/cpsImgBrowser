@@ -69,11 +69,10 @@ class guardTh(threading.Thread):
                 self.imgList = self.getImageList(self.nowFile)
                 self.imgCache = [_NONE for i in range(len(self.imgList))]
                 changeImgLock.acquire()
-                mImgPos = 0
+                mImgPos = self.nowShowImgPos
                 changeImgLock.release()
                 self.imgNum = len(self.imgList)
-                self.nowShowImgPos = 0
-                self.nextLoadImgPos = 0
+                self.nextLoadImgPos = self.nowShowImgPos
                 self.shouldLoadImg = TRUE
                 self.shouldRefreshImg = TRUE
                 t_cps_file = self.nowFile
@@ -81,8 +80,8 @@ class guardTh(threading.Thread):
                     "CPS_FILE": t_cps_file,
                     "nowFilePos": self.nowFilePos,
                     "imgCache": self.imgCache,
-                    "willLoadImgQueue": [{"imgInfo": self.imgList[0],
-                                          "imgPos": 0}]
+                    "willLoadImgQueue": [{"imgInfo": self.imgList[self.nowShowImgPos],
+                                          "imgPos": self.nowShowImgPos}]
                     }
                 list_num = len(self.imgList)
                 for i in range(min([50, list_num])):
@@ -203,6 +202,7 @@ class guardTh(threading.Thread):
         global FILE_URI
         global PWD_JSON
 
+        FILE_LIST[self.nowFilePos]["CurrentPos"] = self.nowShowImgPos
         file_pos = self.nextCanReadFile(direct, self.nowFilePos)
         return_fruit = False
         # print(FILE_LIST[file_pos]["filename"])
@@ -234,6 +234,7 @@ class guardTh(threading.Thread):
             f.write(t_pwd_json)
         self.nowFile = return_fruit
         self.nowFilePos = file_pos
+        self.nowShowImgPos = FILE_LIST[file_pos]["CurrentPos"]
 
         return return_fruit
 
@@ -568,7 +569,7 @@ if __name__ == '__main__':
 
     fileNameList = os.listdir(FILE_URI)
     fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
-    FILE_LIST = [{"filename": fn, "CanRead": TRUE} for fn in fileNameList]
+    FILE_LIST = [{"filename": fn, "CanRead": TRUE, "CurrentPos": 0} for fn in fileNameList]
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
