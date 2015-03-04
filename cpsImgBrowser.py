@@ -31,6 +31,7 @@ CURRENT_FILE = 1
 NOCHANGE_FILE = 2
 JUMP_FILE = 3
 BAD_FILE = "bad_file"
+ANTIALIAS_SHOW_IMG = False
 
 class guardTh(threading.Thread):
     def __init__(self):
@@ -149,7 +150,6 @@ class guardTh(threading.Thread):
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 # print("Change Img Time: %f " % (time.time() - nTime))
-                mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
@@ -166,14 +166,21 @@ class guardTh(threading.Thread):
                     label.configure(image="")
                     label['text'] = "Bad File"
                     continue
-                w, h = showImg.size
-                if root.winfo_height() != 1:
-                    scale = root.winfo_height() / 550.0
+                img_w, img_h = showImg.size
+                win_h = root.winfo_height()
+                win_w = root.winfo_width()
+                if win_h == 1:
+                    win_h = 600
+                    win_w = 800
+                scale = 1.0 * win_h / img_h
+                if img_w * scale > win_w:
+                    scale = 1.0 * win_w / img_w
+                if scale <= 1:
+                    box_height = img_h * scale
+                    box_width = img_w * scale
+                    show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
                 else:
-                    scale = 600 / 550.0
-                box_width = 600 * scale
-                box_height = 550 * scale
-                show_img_resize = self.resizePic(w, h, box_width, box_height, showImg)
+                    show_img_resize = showImg
                 wr, hr = show_img_resize.size
                 title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFilePos + 1,
                                                                  len(FILE_LIST),
@@ -191,8 +198,7 @@ class guardTh(threading.Thread):
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
 
-                mImgLoadQueueLock.release()
-                # print("Sum Load Img Time: " + str(time.time() - st))
+                print("Sum Load Img Time: " + str(time.time() - st))
 
     def getStringMD5(self, string):
         return hashlib.md5(string.encode("utf-8")).hexdigest()
@@ -212,7 +218,10 @@ class guardTh(threading.Thread):
         factor = min([f1, f2])
         width = int(w * factor)
         height = int(h * factor)
-        return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
+        if ANTIALIAS_SHOW_IMG:
+            return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
+        else:
+            return pil_image.resize((width, height))
 
     def getImageList(self, cps):
         t_img_list = [info for info in cps.infolist()
@@ -240,23 +249,23 @@ class guardTh(threading.Thread):
         global st1
         st1 = time.time()
         global FILE_LIST
-        global FILE_URI
         global PWD_JSON
 
         file_pos = self.nextCanReadFile(direct, self.nowFilePos)
         return_fruit = False
         # print(FILE_LIST[file_pos]["filename"])
         filename = FILE_LIST[file_pos]["filename"]
+        file_uri = FILE_LIST[file_pos]["fileUri"]
         if filename.endswith('rar'):
-            return_fruit = self.openRarFile(filename)
+            return_fruit = self.openRarFile(file_pos)
         elif filename.endswith('zip'):
-            return_fruit = self.openZipFile(filename)
+            return_fruit = self.openZipFile(file_pos)
 
         while not return_fruit:
             if USE_FILE_MD5:
-                file_md5 = self.getFileMD5(FILE_URI + filename)
+                file_md5 = self.getFileMD5(file_uri + filename)
             else:
-                file_md5 = self.getStringMD5(FILE_URI + filename)
+                file_md5 = self.getStringMD5(file_uri + filename)
             try:
                 PWD_JSON[file_md5]
             except:
@@ -264,10 +273,11 @@ class guardTh(threading.Thread):
             FILE_LIST[file_pos]["CanRead"] = False
             file_pos = self.nextCanReadFile(direct, file_pos)
             filename = FILE_LIST[file_pos]["filename"]
+            file_uri = FILE_LIST[file_pos]["fileUri"]
             if filename.endswith('rar'):
-                return_fruit = self.openRarFile(filename)
+                return_fruit = self.openRarFile(file_pos)
             elif filename.endswith('zip'):
-                return_fruit = self.openZipFile(filename)
+                return_fruit = self.openZipFile(file_pos)
 
         t_pwd_json = json.dumps(PWD_JSON)
         with open('./Pwd.json', 'w') as f:
@@ -277,19 +287,21 @@ class guardTh(threading.Thread):
 
         return return_fruit
 
-    def openZipFile(self, _filename):
-        global FILE_URI
+    def openZipFile(self, _file_pos):
         global FILE_LIST
         global PWD_JSON
 
-        if not os.path.exists(FILE_URI + _filename):
+        _filename = FILE_LIST[_file_pos]["filename"]
+        _file_uri = FILE_LIST[_file_pos]["fileUri"]
+
+        if not os.path.exists(_file_uri + _filename):
             print("error:fileURI not exists")
             exit()
         # StartTime = time.time()
         if USE_FILE_MD5:
-            file_md5 = self.getFileMD5(FILE_URI + _filename)
+            file_md5 = self.getFileMD5(_file_uri + _filename)
         else:
-            file_md5 = self.getStringMD5(FILE_URI + _filename)
+            file_md5 = self.getStringMD5(_file_uri + _filename)
         # print(time.time() - StartTime)
 
         try:
@@ -298,7 +310,7 @@ class guardTh(threading.Thread):
         except:
             pass
         try:
-            t_cps_file = zipfile.ZipFile(FILE_URI + _filename)
+            t_cps_file = zipfile.ZipFile(_file_uri + _filename)
         except:
             print(_filename + " open fail")
             return False
@@ -352,19 +364,21 @@ class guardTh(threading.Thread):
                         print("Password is WRONG !")
         return t_cps_file
 
-    def openRarFile(self, _filename):
-        global FILE_URI
+    def openRarFile(self, _file_pos):
         global FILE_LIST
         global PWD_JSON
 
-        if not os.path.exists(FILE_URI + _filename):
+        _filename = FILE_LIST[_file_pos]["filename"]
+        _file_uri = FILE_LIST[_file_pos]["fileUri"]
+
+        if not os.path.exists(_file_uri + _filename):
             print("error:fileURI not exists")
             exit()
         # st = time.time()
         if USE_FILE_MD5:
-            file_md5 = self.getFileMD5(FILE_URI + _filename)
+            file_md5 = self.getFileMD5(_file_uri + _filename)
         else:
-            file_md5 = self.getStringMD5(FILE_URI + _filename)
+            file_md5 = self.getStringMD5(_file_uri + _filename)
         # print("getFileMD5: %f"%(time.time() - st))
 
         try:
@@ -373,7 +387,7 @@ class guardTh(threading.Thread):
         except:
             pass
         try:
-            t_cps_file = rarfile.RarFile(FILE_URI + _filename)
+            t_cps_file = rarfile.RarFile(_file_uri + _filename)
         except:
             print(_filename + " open fail")
             return False
@@ -433,7 +447,7 @@ class guardTh(threading.Thread):
             #    return False
             if s_reload:
                 t_cps_file.close()
-                t_cps_file = rarfile.RarFile(FILE_URI + _filename)
+                t_cps_file = rarfile.RarFile(_file_uri + _filename)
                 t_cps_file.setpassword(pwd)
                 # CPS_FILE.testrar()
             if not self.getImageList(t_cps_file):
@@ -460,6 +474,7 @@ class loadImgTh(threading.Thread):
                     data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
                     try:
                         pil_image = PIL.Image.open(io.BytesIO(data))
+                        # print(pil_image.mode)
                     except Exception as ex:
                         print(ex)
                         pil_image = _NONE
@@ -628,6 +643,14 @@ def onKeyPress(ev):
         if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
             jump_num = random.randint(0, len(FILE_LIST))
             changeFile(JUMP_FILE, jump_file=jump_num)
+    elif ev.keycode == 32:
+        global ANTIALIAS_SHOW_IMG
+        if ANTIALIAS_SHOW_IMG:
+            if askquestion(title="抗锯齿", message="是否关闭抗锯齿?") == YES:
+                ANTIALIAS_SHOW_IMG = False
+        else:
+            if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
+                ANTIALIAS_SHOW_IMG = True
 
 '''入口'''
 if __name__ == '__main__':
@@ -645,20 +668,23 @@ if __name__ == '__main__':
         if FILE_URI == _NONE:
             print("URI is wrong")
             exit()
-        t_filename = FILE_URI.split("/")[-1]
-        FILE_URI = FILE_URI.replace(t_filename, _NONE)
+        t_file_uri = FILE_URI
     else:
         FILE_URI = _NONE
         for uri in sys.argv[1:]:
             FILE_URI += (uri + " ")
         FILE_URI = FILE_URI[:-1]
-        t_filename = _NONE
-        if not FILE_URI.endswith("/"):
-            t_filename = FILE_URI.split("/")[-1]
+        t_file_uri = FILE_URI
+
+    t_file_name = _NONE
+    if not FILE_URI.endswith("/"):
+        t_file_name = FILE_URI.split("/")[-1]
+        FILE_URI = FILE_URI.replace(t_file_name, "")
 
     fileNameList = os.listdir(FILE_URI)
+    t_current_uri = FILE_URI
     fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
-    FILE_LIST = [{"filename": fn, "CanRead": TRUE, "CurrentPos": 0} for fn in fileNameList]
+    FILE_LIST = [{"filename": fn, "fileUri": t_current_uri, "CanRead": TRUE, "CurrentPos": 0} for fn in fileNameList]
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
@@ -697,7 +723,7 @@ if __name__ == '__main__':
 
     guardTask = guardTh()
     try:
-        guardTask.nowFilePos = FILE_LIST.index({"filename": t_filename, "CanRead": TRUE})
+        guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "CanRead": TRUE})
     except:
         guardTask.nowFilePos = 0
     guardTask.setDaemon(TRUE)
