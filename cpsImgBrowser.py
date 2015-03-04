@@ -64,6 +64,7 @@ class guardTh(threading.Thread):
                 ChangeFileLock.release()
                 mImgLoadQueueLock.acquire()
                 self.openFile(t_direct)
+                # print("Load File Time: " + str(time.time() - st1))
                 self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
                 self.imgList = self.getImageList(self.nowFile)
                 self.imgCache = [_NONE for i in range(len(self.imgList))]
@@ -84,7 +85,6 @@ class guardTh(threading.Thread):
                                           "imgPos": 0}]
                     }
                 list_num = len(self.imgList)
-                print("Load File Time: " + str(time.time() - st1))
                 for i in range(min([50, list_num])):
                     t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
                     willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
@@ -110,7 +110,7 @@ class guardTh(threading.Thread):
                 changeImgLock.release()
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
-                print("Change Img Time: %f " % (time.time() - nTime))
+                # print("Change Img Time: %f " % (time.time() - nTime))
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
@@ -152,7 +152,7 @@ class guardTh(threading.Thread):
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
 
-                print("Sum Load Img Time: " + str(time.time() - st))
+                # print("Sum Load Img Time: " + str(time.time() - st))
 
     def getStringMD5(self, string):
         return hashlib.md5(string.encode("utf-8")).hexdigest()
@@ -267,7 +267,7 @@ class guardTh(threading.Thread):
             if not t_list:
                 return False
         try:
-            t_cps_file.testzip()
+            t_cps_file.open(t_list[0])
             needs_password = False
         except:
             needs_password = True
@@ -416,7 +416,6 @@ class loadImgTh(threading.Thread):
                 continue
             if self.nowLoadImgInfo:
                 # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-                st2 = time.time()
                 try:
                     data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
                     try:
@@ -428,12 +427,11 @@ class loadImgTh(threading.Thread):
                     print(ex)
                     # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
                     pil_image = BAD_FILE
-                print("Load Img Time: " + str(time.time() - st2))
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
 
             mImgLoadQueueLock.acquire()
-            if willLoadImgQueue["willLoadImgQueue"]:
-                print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
+            # if willLoadImgQueue["willLoadImgQueue"]:
+            #     print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
             if self.mLoadingFilePos is willLoadImgQueue["nowFilePos"]:
                 if self.nowLoadImgInfo:
                     willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
