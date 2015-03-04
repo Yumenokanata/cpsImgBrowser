@@ -73,21 +73,25 @@ class guardTh(threading.Thread):
                 self.nextLoadImgPos = 0
                 self.shouldLoadImg = TRUE
                 self.shouldRefreshImg = TRUE
+                t_cps_file = CPS_FILE
+                CPS_FILELock.release()
                 mImgLoadQueueLock.acquire()
                 willLoadImgQueue = {
-                    "CPS_FILE": CPS_FILE,
+                    "CPS_FILE": t_cps_file,
                     "nowFilePos": self.nowFilePos,
                     "imgCache": self.imgCache,
                     "willLoadImgQueue": [{"imgInfo": self.imgList[0],
                                           "imgPos": 0}]
                     }
                 list_num = len(self.imgList)
+                print("Load File Time: " + str(time.time() - st1))
                 for i in range(list_num):
                     t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
                     willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                                  "imgPos": t_nextLoadImgPos})
                 mImgLoadQueueLock.release()
             else:
+                CPS_FILELock.release()
                 changeImgLock.acquire()
                 if self.nowShowImgPos != mImgPos:
                     mImgPos %= len(self.imgList)
@@ -104,10 +108,9 @@ class guardTh(threading.Thread):
                                                                      "imgPos": t_nextLoadImgPos})
                     mImgLoadQueueLock.release()
                 changeImgLock.release()
-            CPS_FILELock.release()
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
-                # print("Change Img Time: %f " % (time.time() - nTime))
+                print("Change Img Time: %f " % (time.time() - nTime))
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
@@ -149,7 +152,7 @@ class guardTh(threading.Thread):
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
 
-                # print("Sum Load Img Time: " + str(time.time() - st))
+                print("Sum Load Img Time: " + str(time.time() - st))
 
 class loadImgTh(threading.Thread):
     def __init__(self):
@@ -244,17 +247,17 @@ def getImageList(cps):
 def ShowPic(value):
     global changeImgLock
     global mImgPos
-    global nTime
+
     changeImgLock.acquire()
     if value is BACK_IMG:
         mImgPos -= 1
     elif value is NEXT_IMG:
         mImgPos += 1
-
-    nTime = time.time()
     changeImgLock.release()
 
 def mouseEvent(ev):
+    global nTime
+    nTime = time.time()
     global slideT
     global SLIDE_START
     if ev.x > root.winfo_width() / 3.0 * 2.0:
@@ -322,6 +325,8 @@ def nextCanReadFile(direct, now_file_pos):
     return now_file_pos
 
 def openFile(direct):
+    global st1
+    st1 = time.time()
     global CPS_FILELock
     global mFilePos
     global CPS_FILE
@@ -390,7 +395,7 @@ def openZipFile(_filename):
         pass
     try:
         t_cps_file = zipfile.ZipFile(FILE_URI + _filename)
-    except RuntimeError:
+    except:
         print(_filename + " open fail")
         return False
     if t_cps_file.infolist():
@@ -424,7 +429,7 @@ def openZipFile(_filename):
                         has_pwd = True
                         PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
                         break
-                    except RuntimeError:
+                    except:
                         pass
             while not has_pwd:
                 pwd = _NONE
