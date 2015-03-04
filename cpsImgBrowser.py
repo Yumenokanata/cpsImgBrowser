@@ -10,6 +10,7 @@ import hashlib
 import threading
 import time
 import zipfile
+import random
 import PIL
 from PIL import Image
 from PIL.ImageTk import *
@@ -49,13 +50,14 @@ class guardTh(threading.Thread):
         global mImgLoadQueueLock
         global changeImgLock
         global ChangeFileLock
+        global ChangeFileFlag
+        global RandomLoadImgFlag
+        global willLoadImgQueue
         global FILE_LIST
         global root
         global label
         global mFilePos
-        global ChangeFileFlag
         global mImgPos
-        global willLoadImgQueue
 
         global nTime
         nTime = time.time()
@@ -64,19 +66,24 @@ class guardTh(threading.Thread):
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
+
+                FILE_LIST[self.nowFilePos]["CurrentPos"] = self.nowShowImgPos
                 if ChangeFileFlag["direct"] is JUMP_FILE:
                     self.nowFilePos = ChangeFileFlag["nowFilePos"]
                 ChangeFileFlag["direct"] = NOCHANGE_FILE
                 ChangeFileLock.release()
                 mImgLoadQueueLock.acquire()
                 self.openFile(t_direct)
+                self.nowShowImgPos = FILE_LIST[self.nowFilePos]["CurrentPos"]
+
+                # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                 # print("Load File Time: " + str(time.time() - st1))
                 self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
                 self.imgList = self.getImageList(self.nowFile)
-                self.imgCache = [_NONE for i in range(len(self.imgList))]
                 changeImgLock.acquire()
                 mImgPos = self.nowShowImgPos
                 changeImgLock.release()
+                self.imgCache = [_NONE for i in range(len(self.imgList))]
                 self.imgNum = len(self.imgList)
                 self.nextLoadImgPos = self.nowShowImgPos
                 self.shouldLoadImg = TRUE
@@ -101,7 +108,27 @@ class guardTh(threading.Thread):
             else:
                 ChangeFileLock.release()
                 changeImgLock.acquire()
-                if self.nowShowImgPos != mImgPos:
+                if RandomLoadImgFlag:
+                    mImgLoadQueueLock.acquire()
+                    random.shuffle(self.imgList)
+                    mImgPos = 0
+                    self.nowShowImgPos = mImgPos
+                    self.shouldRefreshImg = TRUE
+                    RandomLoadImgFlag = False
+                    self.imgCache = [_NONE for i in range(len(self.imgList))]
+                    willLoadImgQueue["imgCache"] = self.imgCache
+                    willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[self.nowShowImgPos],
+                                                             "imgPos": self.nowShowImgPos}]
+                    list_num = len(self.imgList)
+                    for i in range(min([25, list_num])):
+                        t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
+                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                     "imgPos": t_nextLoadImgPos})
+                        t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
+                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                     "imgPos": t_nextLoadImgPos})
+                    mImgLoadQueueLock.release()
+                elif self.nowShowImgPos != mImgPos:
                     mImgPos %= len(self.imgList)
                     self.nowShowImgPos = mImgPos
                     self.shouldRefreshImg = TRUE
@@ -122,6 +149,7 @@ class guardTh(threading.Thread):
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 # print("Change Img Time: %f " % (time.time() - nTime))
+                mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
@@ -163,6 +191,7 @@ class guardTh(threading.Thread):
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
 
+                mImgLoadQueueLock.release()
                 # print("Sum Load Img Time: " + str(time.time() - st))
 
     def getStringMD5(self, string):
@@ -214,7 +243,6 @@ class guardTh(threading.Thread):
         global FILE_URI
         global PWD_JSON
 
-        FILE_LIST[self.nowFilePos]["CurrentPos"] = self.nowShowImgPos
         file_pos = self.nextCanReadFile(direct, self.nowFilePos)
         return_fruit = False
         # print(FILE_LIST[file_pos]["filename"])
@@ -246,7 +274,6 @@ class guardTh(threading.Thread):
             f.write(t_pwd_json)
         self.nowFile = return_fruit
         self.nowFilePos = file_pos
-        self.nowShowImgPos = FILE_LIST[file_pos]["CurrentPos"]
 
         return return_fruit
 
@@ -442,12 +469,12 @@ class loadImgTh(threading.Thread):
                     pil_image = BAD_FILE
                 # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-            
+
             mImgLoadQueueLock.acquire()
             # if willLoadImgQueue["willLoadImgQueue"]:
             #     print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
-            if self.mLoadingFilePos is willLoadImgQueue["nowFilePos"]:
-                if self.nowLoadImgInfo:
+            if self.mLoadingFilePos == willLoadImgQueue["nowFilePos"]:
+                if self.nowLoadImgInfo and (not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]):
                     willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
             else:
                 self.cpsFile = willLoadImgQueue["CPS_FILE"]
@@ -584,10 +611,23 @@ def onKeyPress(ev):
         except:
             showerror(title="错误", message="输入错误！")
     elif ev.keycode == 26:
-        jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
+        jump_num = askstring(title='图片跳转', prompt="请输入跳转到的图片序号: ")
+        try:
+            jump_num = int(jump_num)
+            jump_num = max([1, jump_num])
+            ShowPic(JUMP_IMG, jump_num=jump_num - 1)
+        except:
+            showerror(title="错误", message="输入错误！")
     elif ev.keycode == 27:
-        if askquestion(title="乱序浏览", message="是否以乱序浏览图片?"):
-            pass
+        if askquestion(title="乱序浏览", message="是否打乱图片顺序?") == YES:
+            changeImgLock.acquire()
+            global RandomLoadImgFlag
+            RandomLoadImgFlag = True
+            changeImgLock.release()
+    elif ev.keycode == 54:
+        if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
+            jump_num = random.randint(0, len(FILE_LIST))
+            changeFile(JUMP_FILE, jump_file=jump_num)
 
 '''入口'''
 if __name__ == '__main__':
@@ -652,6 +692,7 @@ if __name__ == '__main__':
                 f.write(t_pwd_json)
 
     ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
+    RandomLoadImgFlag = False
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
