@@ -164,7 +164,14 @@ class guardTh(threading.Thread):
                 showImg = self.imgCache[self.nowShowImgPos]
                 if showImg is BAD_FILE:
                     label.configure(image="")
-                    label['text'] = "Bad File"
+                    label['text'] = "Bad Image"
+                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFilePos + 1,
+                                                                 len(FILE_LIST),
+                                                                 self.nowShowImgPos + 1,
+                                                                 self.imgNum,
+                                                                 imgName,
+                                                                 self.nowFilename)
+                    root.title(title)
                     continue
                 img_w, img_h = showImg.size
                 win_h = root.winfo_height()
@@ -477,7 +484,7 @@ class loadImgTh(threading.Thread):
                         # print(pil_image.mode)
                     except Exception as ex:
                         print(ex)
-                        pil_image = _NONE
+                        pil_image = BAD_FILE
                 except Exception as ex:
                     print(ex)
                     # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
@@ -615,7 +622,8 @@ def onKeyPress(ev):
             t_slide_time = int(t_slide_time)
             SLIDE_TIME = max([1, t_slide_time])
         except:
-            showerror(title="错误", message="输入错误！")
+            print("输入错误")
+            # showerror(title="错误", message="输入错误！")
     elif ev.keycode == 25:
         jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
         try:
@@ -632,7 +640,7 @@ def onKeyPress(ev):
             jump_num = max([1, jump_num])
             ShowPic(JUMP_IMG, jump_num=jump_num - 1)
         except:
-            showerror(title="错误", message="输入错误！")
+            print("输入错误")
     elif ev.keycode == 27:
         if askquestion(title="乱序浏览", message="是否打乱图片顺序?") == YES:
             changeImgLock.acquire()
@@ -664,25 +672,28 @@ if __name__ == '__main__':
 
     if len(sys.argv) < 2:
         fd = LoadFileDialog(root, title="要打开的文件")
-        FILE_URI = fd.go()
-        if FILE_URI == _NONE:
+        MAIN_FILE_URI = fd.go()
+        if MAIN_FILE_URI == _NONE:
             print("URI is wrong")
             exit()
-        t_file_uri = FILE_URI
+        t_file_uri = MAIN_FILE_URI
     else:
-        FILE_URI = _NONE
+        MAIN_FILE_URI = _NONE
         for uri in sys.argv[1:]:
-            FILE_URI += (uri + " ")
-        FILE_URI = FILE_URI[:-1]
-        t_file_uri = FILE_URI
+            MAIN_FILE_URI += (uri + " ")
+        MAIN_FILE_URI = MAIN_FILE_URI[:-1]
+        t_file_uri = MAIN_FILE_URI
 
     t_file_name = _NONE
-    if not FILE_URI.endswith("/"):
-        t_file_name = FILE_URI.split("/")[-1]
-        FILE_URI = FILE_URI.replace(t_file_name, "")
+    if not MAIN_FILE_URI.endswith("/"):
+        t_file_name = MAIN_FILE_URI.split("/")[-1]
+        MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
 
-    fileNameList = os.listdir(FILE_URI)
-    t_current_uri = FILE_URI
+    # if askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES:
+    #     pass
+    fileNameList = os.listdir(MAIN_FILE_URI)
+    # print([f + "\n" for f in fileNameList])
+    t_current_uri = MAIN_FILE_URI
     fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
     FILE_LIST = [{"filename": fn, "fileUri": t_current_uri, "CanRead": TRUE, "CurrentPos": 0} for fn in fileNameList]
 
