@@ -204,6 +204,19 @@ class guardTh(threading.Thread):
                     show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
                 else:
                     show_img_resize = showImg
+
+                if show_img_resize is BAD_FILE:
+                    label.configure(image="")
+                    label['text'] = "Bad Image"
+                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFileInfo.FilePos + 1,
+                                                                 len(FILE_LIST),
+                                                                 self.nowShowImgPos + 1,
+                                                                 self.imgNum,
+                                                                 imgName,
+                                                                 self.nowFileInfo.Filename)
+                    root.title(title)
+                    continue
+
                 wr, hr = show_img_resize.size
                 title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFileInfo.FilePos + 1,
                                                                  len(FILE_LIST),
@@ -241,10 +254,13 @@ class guardTh(threading.Thread):
         factor = min([f1, f2])
         width = int(w * factor)
         height = int(h * factor)
-        if ANTIALIAS_SHOW_IMG:
-            return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
-        else:
-            return pil_image.resize((width, height))
+        try:
+            if ANTIALIAS_SHOW_IMG:
+                return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
+            else:
+                return pil_image.resize((width, height))
+        except:
+            return BAD_FILE
 
     def getImageList(self, cps, isfile=False):
         if isfile:
