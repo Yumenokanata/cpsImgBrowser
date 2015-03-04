@@ -16,16 +16,19 @@ from PIL.ImageTk import *
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
+from tkinter.messagebox import *
 
 _NONE = ""
 BACK_IMG = 1
 NEXT_IMG = 2
+JUMP_IMG = 3
 SLIDE_TIME = 3
 USE_FILE_MD5 = False
 BACK_FILE = -1
 NEXT_FILE = 0
 CURRENT_FILE = 1
 NOCHANGE_FILE = 2
+JUMP_FILE = 3
 BAD_FILE = "bad_file"
 
 class guardTh(threading.Thread):
@@ -49,6 +52,7 @@ class guardTh(threading.Thread):
         global FILE_LIST
         global root
         global label
+        global mFilePos
         global ChangeFileFlag
         global mImgPos
         global willLoadImgQueue
@@ -58,9 +62,11 @@ class guardTh(threading.Thread):
 
         while TRUE:
             ChangeFileLock.acquire()
-            if ChangeFileFlag != NOCHANGE_FILE:
-                t_direct = ChangeFileFlag
-                ChangeFileFlag = NOCHANGE_FILE
+            if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
+                t_direct = ChangeFileFlag["direct"]
+                if ChangeFileFlag["direct"] is JUMP_FILE:
+                    self.nowFilePos = ChangeFileFlag["nowFilePos"]
+                ChangeFileFlag["direct"] = NOCHANGE_FILE
                 ChangeFileLock.release()
                 mImgLoadQueueLock.acquire()
                 self.openFile(t_direct)
@@ -84,8 +90,11 @@ class guardTh(threading.Thread):
                                           "imgPos": self.nowShowImgPos}]
                     }
                 list_num = len(self.imgList)
-                for i in range(min([50, list_num])):
+                for i in range(min([25, list_num])):
                     t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                 "imgPos": t_nextLoadImgPos})
+                    t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
                     willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                                  "imgPos": t_nextLoadImgPos})
                 mImgLoadQueueLock.release()
@@ -101,8 +110,11 @@ class guardTh(threading.Thread):
                     willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[self.nowShowImgPos],
                                                              "imgPos": self.nowShowImgPos}]
                     list_num = len(self.imgList)
-                    for i in range(min([50, list_num])):
+                    for i in range(min([25, list_num])):
                         t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
+                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                     "imgPos": t_nextLoadImgPos})
+                        t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
                         willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                                      "imgPos": t_nextLoadImgPos})
                     mImgLoadQueueLock.release()
@@ -428,8 +440,9 @@ class loadImgTh(threading.Thread):
                     print(ex)
                     # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
                     pil_image = BAD_FILE
+                # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-
+            
             mImgLoadQueueLock.acquire()
             # if willLoadImgQueue["willLoadImgQueue"]:
             #     print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
@@ -451,7 +464,7 @@ class loadImgTh(threading.Thread):
             mImgLoadQueueLock.release()
 
 def slide():
-    print ("slide")
+    # print ("slide")
     global slideLock
     while(True):
         slideLock.acquire()
@@ -463,7 +476,7 @@ def slide():
         else:
             break
 
-def ShowPic(value):
+def ShowPic(value, jump_num=0):
     global changeImgLock
     global mImgPos
 
@@ -472,16 +485,20 @@ def ShowPic(value):
         mImgPos -= 1
     elif value is NEXT_IMG:
         mImgPos += 1
+    elif value is JUMP_IMG:
+        mImgPos = jump_num
     changeImgLock.release()
 
-def changeFile(direct):
+def changeFile(direct, jump_file=0):
     global label
     global ChangeFileFlag
     label.configure(image="")
     label['text'] = "Loading"
 
     ChangeFileLock.acquire()
-    ChangeFileFlag = direct
+    ChangeFileFlag["direct"] = direct
+    if direct is JUMP_FILE:
+        ChangeFileFlag["nowFilePos"] = jump_file
     ChangeFileLock.release()
 
 def mouseEvent(ev):
@@ -505,30 +522,7 @@ def mouseEvent(ev):
             SLIDE_START = False
             slideLock.release()
         changeFile(BACK_FILE)
-
-def onKeyPress(ev):
-    global nTime
-    nTime = time.time()
-    global slideT
-    global SLIDE_START
-    # print(ev.keycode)
-    if ev.keycode == 111 or ev.keycode == 113:
-        ShowPic(BACK_IMG)
-    elif ev.keycode == 114 or ev.keycode == 116:
-        ShowPic(NEXT_IMG)
-    elif ev.keycode == 40:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
-        changeFile(NEXT_FILE)
-    elif ev.keycode == 38:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
-        changeFile(BACK_FILE)
-    elif ev.keycode == 43:
+    else:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
@@ -539,6 +533,61 @@ def onKeyPress(ev):
             slideLock.release()
             slideT = threading.Timer(0, slide)
             slideT.start()
+
+def onKeyPress(ev):
+    global nTime
+    nTime = time.time()
+    global slideT
+    global SLIDE_START
+    print(ev.keycode)
+    if ev.keycode == 39:
+        if slideT.isAlive():
+            slideLock.acquire()
+            SLIDE_START = False
+            slideLock.release()
+        else:
+            slideLock.acquire()
+            SLIDE_START = True
+            slideLock.release()
+            slideT = threading.Timer(0, slide)
+            slideT.start()
+        return
+
+    if slideT.isAlive():
+            slideLock.acquire()
+            SLIDE_START = False
+            slideLock.release()
+
+    if ev.keycode == 113:
+        ShowPic(BACK_IMG)
+    elif ev.keycode == 114:
+        ShowPic(NEXT_IMG)
+    elif ev.keycode == 40 or ev.keycode == 116:
+        changeFile(NEXT_FILE)
+    elif ev.keycode == 38 or ev.keycode == 111:
+        changeFile(BACK_FILE)
+    elif ev.keycode == 33:
+        global SLIDE_TIME
+        t_slide_time = askstring(title='设置幻灯片时间', prompt="当前时间: %d" % (SLIDE_TIME))
+        try:
+            t_slide_time = int(t_slide_time)
+            SLIDE_TIME = max([1, t_slide_time])
+        except:
+            showerror(title="错误", message="输入错误！")
+    elif ev.keycode == 25:
+        jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
+        try:
+            jump_num = int(jump_num)
+            jump_num = max([1, jump_num])
+            jump_num = min([len(FILE_LIST), jump_num])
+            changeFile(JUMP_FILE, jump_file=jump_num - 1)
+        except:
+            showerror(title="错误", message="输入错误！")
+    elif ev.keycode == 26:
+        jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
+    elif ev.keycode == 27:
+        if askquestion(title="乱序浏览", message="是否以乱序浏览图片?"):
+            pass
 
 '''入口'''
 if __name__ == '__main__':
@@ -602,7 +651,7 @@ if __name__ == '__main__':
             with open('./Pwd.json', 'w') as f:
                 f.write(t_pwd_json)
 
-    ChangeFileFlag = CURRENT_FILE
+    ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
