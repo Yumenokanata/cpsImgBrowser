@@ -659,6 +659,17 @@ def onKeyPress(ev):
         else:
             if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
                 ANTIALIAS_SHOW_IMG = True
+    elif ev.keycode == 58:
+        add_password = askstring(title='默认密码', prompt="请输入欲添加的可待测试默认密码: \n  1.以\",\"分隔多个\n  2.多余的空格也会被视为密码")
+        add_password = add_password.split(",")
+        for ap in add_password:
+            try:
+                PWD_JSON["defaultPassword"].index(ap)
+            except:
+                PWD_JSON["defaultPassword"].append(ap)
+        t_pwd_json = json.dumps(PWD_JSON)
+        with open('./Pwd.json', 'w') as f:
+            f.write(t_pwd_json)
 
 def getFileList(file_uri, subfile=False):
     t_file_list = []
@@ -696,7 +707,7 @@ if __name__ == '__main__':
             MAIN_FILE_URI += (uri + " ")
         MAIN_FILE_URI = MAIN_FILE_URI[:-1]
         t_file_uri = MAIN_FILE_URI
-    MAIN_FILE_URI = "./"
+
     t_file_name = _NONE
     if os.path.isfile(MAIN_FILE_URI):
         t_file_name = MAIN_FILE_URI.split("/")[-1]
