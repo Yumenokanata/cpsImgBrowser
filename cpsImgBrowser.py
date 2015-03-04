@@ -67,12 +67,12 @@ class guardTh(threading.Thread):
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
-
                 FILE_LIST[self.nowFilePos]["CurrentPos"] = self.nowShowImgPos
                 if ChangeFileFlag["direct"] is JUMP_FILE:
                     self.nowFilePos = ChangeFileFlag["nowFilePos"]
                 ChangeFileFlag["direct"] = NOCHANGE_FILE
                 ChangeFileLock.release()
+                root.title("图片浏览器-Loading/%d" % len(FILE_LIST))
                 mImgLoadQueueLock.acquire()
                 self.openFile(t_direct)
                 self.nowShowImgPos = FILE_LIST[self.nowFilePos]["CurrentPos"]
@@ -205,7 +205,7 @@ class guardTh(threading.Thread):
                 label.image = tk_img
                 label.pack(padx=5, pady=5)
 
-                print("Sum Load Img Time: " + str(time.time() - st))
+                # print("Sum Load Img Time: " + str(time.time() - st))
 
     def getStringMD5(self, string):
         return hashlib.md5(string.encode("utf-8")).hexdigest()
@@ -660,6 +660,19 @@ def onKeyPress(ev):
             if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
                 ANTIALIAS_SHOW_IMG = True
 
+def getFileList(file_uri, subfile=False):
+    t_file_list = []
+    if not file_uri.endswith("/"):
+        file_uri += "/"
+    fileNameList = os.listdir(file_uri)
+    for sub_file_name in fileNameList:
+        if (sub_file_name.endswith('rar') or sub_file_name.endswith('zip')):
+            t_file_list.append({"filename": sub_file_name, "fileUri": file_uri, "CanRead": TRUE, "CurrentPos": 0})
+        elif subfile and os.path.isdir(file_uri + sub_file_name):
+            t_file_list += getFileList(file_uri + sub_file_name, subfile=True)
+    return t_file_list
+
+
 '''入口'''
 if __name__ == '__main__':
     root = tk.Tk()
@@ -683,19 +696,13 @@ if __name__ == '__main__':
             MAIN_FILE_URI += (uri + " ")
         MAIN_FILE_URI = MAIN_FILE_URI[:-1]
         t_file_uri = MAIN_FILE_URI
-
+    MAIN_FILE_URI = "./"
     t_file_name = _NONE
-    if not MAIN_FILE_URI.endswith("/"):
+    if os.path.isfile(MAIN_FILE_URI):
         t_file_name = MAIN_FILE_URI.split("/")[-1]
         MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
 
-    # if askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES:
-    #     pass
-    fileNameList = os.listdir(MAIN_FILE_URI)
-    # print([f + "\n" for f in fileNameList])
-    t_current_uri = MAIN_FILE_URI
-    fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
-    FILE_LIST = [{"filename": fn, "fileUri": t_current_uri, "CanRead": TRUE, "CurrentPos": 0} for fn in fileNameList]
+    FILE_LIST = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
