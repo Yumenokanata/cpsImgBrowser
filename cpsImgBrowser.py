@@ -62,6 +62,7 @@ class guardTh(threading.Thread):
                 t_direct = ChangeFileFlag
                 ChangeFileFlag = NOCHANGE_FILE
                 ChangeFileLock.release()
+                mImgLoadQueueLock.acquire()
                 self.openFile(t_direct)
                 self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
                 self.imgList = self.getImageList(self.nowFile)
@@ -75,7 +76,6 @@ class guardTh(threading.Thread):
                 self.shouldLoadImg = TRUE
                 self.shouldRefreshImg = TRUE
                 t_cps_file = self.nowFile
-                mImgLoadQueueLock.acquire()
                 willLoadImgQueue = {
                     "CPS_FILE": t_cps_file,
                     "nowFilePos": self.nowFilePos,
@@ -85,7 +85,7 @@ class guardTh(threading.Thread):
                     }
                 list_num = len(self.imgList)
                 print("Load File Time: " + str(time.time() - st1))
-                for i in range(list_num):
+                for i in range(min([50, list_num])):
                     t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
                     willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                                  "imgPos": t_nextLoadImgPos})
@@ -102,7 +102,7 @@ class guardTh(threading.Thread):
                     willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[self.nowShowImgPos],
                                                              "imgPos": self.nowShowImgPos}]
                     list_num = len(self.imgList)
-                    for i in range(list_num):
+                    for i in range(min([50, list_num])):
                         t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
                         willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                                      "imgPos": t_nextLoadImgPos})
@@ -297,7 +297,7 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while pwd == _NONE:
+                    while not pwd:
                         pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
                     if pwd == "skip":
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
@@ -373,7 +373,7 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while pwd == _NONE:
+                    while not pwd:
                         pwd = askstring(title='请输入密码', prompt="RaR File: " + _filename + "\n输入\"skip\"跳过此文件")
                     if pwd == "skip":
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
@@ -416,6 +416,7 @@ class loadImgTh(threading.Thread):
                 continue
             if self.nowLoadImgInfo:
                 # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
+                st2 = time.time()
                 try:
                     data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
                     try:
@@ -427,11 +428,12 @@ class loadImgTh(threading.Thread):
                     print(ex)
                     # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
                     pil_image = BAD_FILE
+                print("Load Img Time: " + str(time.time() - st2))
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
 
             mImgLoadQueueLock.acquire()
-            #if willLoadImgQueue["willLoadImgQueue"]:
-            #    print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
+            if willLoadImgQueue["willLoadImgQueue"]:
+                print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
             if self.mLoadingFilePos is willLoadImgQueue["nowFilePos"]:
                 if self.nowLoadImgInfo:
                     willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
@@ -506,6 +508,8 @@ def mouseEvent(ev):
         changeFile(BACK_FILE)
 
 def onKeyPress(ev):
+    global nTime
+    nTime = time.time()
     global slideT
     global SLIDE_START
     # print(ev.keycode)

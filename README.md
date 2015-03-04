@@ -21,6 +21,8 @@
         $ sudo apt-get install python3-tk  
         $ sudo apt-get install python3-pip  
         $ sudo pip install rarfile  
+* 现大部分的卡顿在于图片文件的载入和重绘，也就是zipfile的read函数和tk界面绘制：   
+点击到响应点击(0.0001s ~ 0.0002s)->载入图片(0.5s ~ 12s)->显示(0.4s ~ 1.0s)
 
 ###使用说明：
 * ubuntu下使用  
