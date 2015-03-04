@@ -25,9 +25,8 @@ USE_FILE_MD5 = False
 BACK_FILE = -1
 NEXT_FILE = 0
 CURRENT_FILE = 1
+NOCHANGE_FILE = 2
 BAD_FILE = "bad_file"
-
-changePic = False
 
 class guardTh(threading.Thread):
     def __init__(self):
@@ -35,6 +34,7 @@ class guardTh(threading.Thread):
         self.nextLoadImgPos = 0
         self.nowFilePos = -1
         self.nowFilename = _NONE
+        self.nowFile = _NONE
         self.nowShowImgPos = 0
         self.imgCache = []
         self.imgList = []
@@ -45,25 +45,26 @@ class guardTh(threading.Thread):
     def run(self):
         global mImgLoadQueueLock
         global changeImgLock
-        global CPS_FILELock
-        global mFilePos
+        global ChangeFileLock
         global FILE_LIST
-        global CPS_FILE
         global root
         global label
-        global changePic
+        global ChangeFileFlag
         global mImgPos
-
         global willLoadImgQueue
+
         global nTime
         nTime = time.time()
 
         while TRUE:
-            CPS_FILELock.acquire()
-            if self.nowFilePos != mFilePos:
-                self.nowFilePos = mFilePos
+            ChangeFileLock.acquire()
+            if ChangeFileFlag != NOCHANGE_FILE:
+                t_direct = ChangeFileFlag
+                ChangeFileFlag = NOCHANGE_FILE
+                ChangeFileLock.release()
+                self.openFile(t_direct)
                 self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
-                self.imgList = getImageList(CPS_FILE)
+                self.imgList = self.getImageList(self.nowFile)
                 self.imgCache = [_NONE for i in range(len(self.imgList))]
                 changeImgLock.acquire()
                 mImgPos = 0
@@ -73,8 +74,7 @@ class guardTh(threading.Thread):
                 self.nextLoadImgPos = 0
                 self.shouldLoadImg = TRUE
                 self.shouldRefreshImg = TRUE
-                t_cps_file = CPS_FILE
-                CPS_FILELock.release()
+                t_cps_file = self.nowFile
                 mImgLoadQueueLock.acquire()
                 willLoadImgQueue = {
                     "CPS_FILE": t_cps_file,
@@ -91,7 +91,7 @@ class guardTh(threading.Thread):
                                                                  "imgPos": t_nextLoadImgPos})
                 mImgLoadQueueLock.release()
             else:
-                CPS_FILELock.release()
+                ChangeFileLock.release()
                 changeImgLock.acquire()
                 if self.nowShowImgPos != mImgPos:
                     mImgPos %= len(self.imgList)
@@ -134,7 +134,7 @@ class guardTh(threading.Thread):
                     scale = 600 / 550.0
                 box_width = 600 * scale
                 box_height = 550 * scale
-                show_img_resize = resizePic(w, h, box_width, box_height, showImg)
+                show_img_resize = self.resizePic(w, h, box_width, box_height, showImg)
                 wr, hr = show_img_resize.size
                 title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFilePos + 1,
                                                                  len(FILE_LIST),
@@ -154,6 +154,252 @@ class guardTh(threading.Thread):
 
                 print("Sum Load Img Time: " + str(time.time() - st))
 
+    def getStringMD5(self, string):
+        return hashlib.md5(string.encode("utf-8")).hexdigest()
+
+    def getFileMD5(self, uri):
+        if not os.path.exists(uri):
+            print("error:fileURI not exists")
+            exit()
+        md5file = open(uri, 'rb')
+        md5 = hashlib.md5(md5file.read()).hexdigest()
+        md5file.close()
+        return md5
+
+    def resizePic(self, w, h, rw, rh, pil_image):
+        f1 = 1.0 * rw / w
+        f2 = 1.0 * rh / h
+        factor = min([f1, f2])
+        width = int(w * factor)
+        height = int(h * factor)
+        return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
+
+    def getImageList(self, cps):
+        t_img_list = [info for info in cps.infolist()
+                   if(info.filename.endswith('jpg')
+                      or info.filename.endswith('png')
+                      or info.filename.endswith('gif'))]
+        return t_img_list
+
+    def nextCanReadFile(self, direct, now_file_pos):
+        global FILE_LIST
+        if direct is NEXT_FILE:
+            now_file_pos += 1
+        elif direct is BACK_FILE:
+            now_file_pos -= 1
+        now_file_pos %= len(FILE_LIST)
+        while FILE_LIST[now_file_pos]["CanRead"] is False:
+            if direct is BACK_FILE:
+                now_file_pos -= 1
+            else:
+                now_file_pos += 1
+            now_file_pos %= len(FILE_LIST)
+        return now_file_pos
+
+    def openFile(self, direct):
+        global st1
+        st1 = time.time()
+        global FILE_LIST
+        global FILE_URI
+        global PWD_JSON
+
+        file_pos = self.nextCanReadFile(direct, self.nowFilePos)
+        return_fruit = False
+        # print(FILE_LIST[file_pos]["filename"])
+        filename = FILE_LIST[file_pos]["filename"]
+        if filename.endswith('rar'):
+            return_fruit = self.openRarFile(filename)
+        elif filename.endswith('zip'):
+            return_fruit = self.openZipFile(filename)
+
+        while not return_fruit:
+            if USE_FILE_MD5:
+                file_md5 = self.getFileMD5(FILE_URI + filename)
+            else:
+                file_md5 = self.getStringMD5(FILE_URI + filename)
+            try:
+                PWD_JSON[file_md5]
+            except:
+                PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
+            FILE_LIST[file_pos]["CanRead"] = False
+            file_pos = self.nextCanReadFile(direct, file_pos)
+            filename = FILE_LIST[file_pos]["filename"]
+            if filename.endswith('rar'):
+                return_fruit = self.openRarFile(filename)
+            elif filename.endswith('zip'):
+                return_fruit = self.openZipFile(filename)
+
+        t_pwd_json = json.dumps(PWD_JSON)
+        with open('./Pwd.json', 'w') as f:
+            f.write(t_pwd_json)
+        self.nowFile = return_fruit
+        self.nowFilePos = file_pos
+
+        return return_fruit
+
+    def openZipFile(self, _filename):
+        global FILE_URI
+        global FILE_LIST
+        global PWD_JSON
+
+        if not os.path.exists(FILE_URI + _filename):
+            print("error:fileURI not exists")
+            exit()
+        # StartTime = time.time()
+        if USE_FILE_MD5:
+            file_md5 = self.getFileMD5(FILE_URI + _filename)
+        else:
+            file_md5 = self.getStringMD5(FILE_URI + _filename)
+        # print(time.time() - StartTime)
+
+        try:
+            if PWD_JSON[file_md5]["badfile"]:
+                return False
+        except:
+            pass
+        try:
+            t_cps_file = zipfile.ZipFile(FILE_URI + _filename)
+        except:
+            print(_filename + " open fail")
+            return False
+        if t_cps_file.infolist():
+            t_list = self.getImageList(t_cps_file)
+            if not t_list:
+                return False
+        try:
+            t_cps_file.testzip()
+            needs_password = False
+        except:
+            needs_password = True
+
+        if needs_password:
+            try:
+                pwd = PWD_JSON[file_md5]["password"]
+                if not pwd:
+                    raise Exception
+                t_cps_file.setpassword(pwd.encode("utf-8"))
+                t_cps_file.open(t_list[0])
+            except:
+                has_pwd = False
+                try:
+                    pwd_default = PWD_JSON["defaultPassword"]
+                except:
+                    pwd_default = []
+                if pwd_default:
+                    for p in pwd_default:
+                        try:
+                            t_cps_file.setpassword(p.encode("utf-8"))
+                            t_cps_file.open(t_list[0])
+                            has_pwd = True
+                            PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
+                            break
+                        except:
+                            pass
+                while not has_pwd:
+                    pwd = _NONE
+                    while pwd == _NONE:
+                        pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    if pwd == "skip":
+                        PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
+                        return False
+                    try:
+                        t_cps_file.setpassword(pwd.encode("utf-8"))
+                        t_cps_file.open(t_list[0])
+                        has_pwd = True
+                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
+                    except Exception as ex:
+                        print(ex)
+                        print("Password is WRONG !")
+        return t_cps_file
+
+    def openRarFile(self, _filename):
+        global FILE_URI
+        global FILE_LIST
+        global PWD_JSON
+
+        if not os.path.exists(FILE_URI + _filename):
+            print("error:fileURI not exists")
+            exit()
+        # st = time.time()
+        if USE_FILE_MD5:
+            file_md5 = self.getFileMD5(FILE_URI + _filename)
+        else:
+            file_md5 = self.getStringMD5(FILE_URI + _filename)
+        # print("getFileMD5: %f"%(time.time() - st))
+
+        try:
+            if PWD_JSON[file_md5]["badfile"]:
+                return False
+        except:
+            pass
+        try:
+            t_cps_file = rarfile.RarFile(FILE_URI + _filename)
+        except:
+            print(_filename + " open fail")
+            return False
+        if t_cps_file.infolist():
+            t_list = self.getImageList(t_cps_file)
+            if not t_list:
+                return False
+
+        if t_cps_file.needs_password():
+            pwd = _NONE
+            s_reload = True
+            try:
+                pwd = PWD_JSON[file_md5]["password"]
+                if not pwd:
+                    raise Exception
+                t_cps_file.setpassword(pwd)
+                # t_cps_file.read(t_cps_file.infolist()[0])
+                # t_cps_file.testrar()
+                s_reload = False
+            except:
+                has_pwd = False
+                try:
+                    pwd_default = PWD_JSON["defaultPassword"]
+                except:
+                    pwd_default = []
+                if pwd_default:
+                    for p in pwd_default:
+                        try:
+                            t_cps_file.setpassword(p)
+                            # t_cps_file.read(t_list[0])
+                            t_cps_file.testrar()
+                            has_pwd = True
+                            pwd = p
+                            PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
+                            break
+                        except:
+                            pass
+                while not has_pwd:
+                    pwd = _NONE
+                    while pwd == _NONE:
+                        pwd = askstring(title='请输入密码', prompt="RaR File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    if pwd == "skip":
+                        PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
+                        return False
+                    try:
+                        t_cps_file.setpassword(pwd)
+                        # t_cps_file.read(t_list[0])
+                        t_cps_file.testrar()
+                        has_pwd = True
+                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
+                    except:
+                        print("Password is WRONG !")
+
+            # try:
+            #    t_cps_file.testrar()
+            # except:
+            #    return False
+            if s_reload:
+                t_cps_file.close()
+                t_cps_file = rarfile.RarFile(FILE_URI + _filename)
+                t_cps_file.setpassword(pwd)
+                # CPS_FILE.testrar()
+            if not self.getImageList(t_cps_file):
+                return False
+        return t_cps_file
+
 class loadImgTh(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
@@ -162,7 +408,6 @@ class loadImgTh(threading.Thread):
         self.cpsFile = _NONE
 
     def run(self):
-        global mFilePos
         global willLoadImgQueue
         global mImgLoadQueueLock
 
@@ -217,33 +462,6 @@ def slide():
         else:
             break
 
-def getStringMD5(string):
-    return hashlib.md5(string.encode("utf-8")).hexdigest()
-
-def getFileMD5(uri):
-    if not os.path.exists(uri):
-        print("error:fileURI not exists")
-        exit()
-    md5file = open(uri, 'rb')
-    md5 = hashlib.md5(md5file.read()).hexdigest()
-    md5file.close()
-    return md5
-
-def resizePic(w, h, rw, rh, pil_image):
-    f1 = 1.0 * rw / w
-    f2 = 1.0 * rh / h
-    factor = min([f1, f2])
-    width = int(w * factor)
-    height = int(h * factor)
-    return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
-
-def getImageList(cps):
-    tImgList = [info for info in cps.infolist()
-               if(info.filename.endswith('jpg')
-                  or info.filename.endswith('png')
-                  or info.filename.endswith('gif'))]
-    return tImgList
-
 def ShowPic(value):
     global changeImgLock
     global mImgPos
@@ -254,6 +472,16 @@ def ShowPic(value):
     elif value is NEXT_IMG:
         mImgPos += 1
     changeImgLock.release()
+
+def changeFile(direct):
+    global label
+    global ChangeFileFlag
+    label.configure(image="")
+    label['text'] = "Loading"
+
+    ChangeFileLock.acquire()
+    ChangeFileFlag = direct
+    ChangeFileLock.release()
 
 def mouseEvent(ev):
     global nTime
@@ -269,13 +497,13 @@ def mouseEvent(ev):
             slideLock.acquire()
             SLIDE_START = False
             slideLock.release()
-        openFile(NEXT_FILE)
+        changeFile(NEXT_FILE)
     elif ev.y < root.winfo_height() / 3.0:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
             slideLock.release()
-        openFile(BACK_FILE)
+        changeFile(BACK_FILE)
 
 def onKeyPress(ev):
     global slideT
@@ -290,13 +518,13 @@ def onKeyPress(ev):
             slideLock.acquire()
             SLIDE_START = False
             slideLock.release()
-        openFile(NEXT_FILE)
+        changeFile(NEXT_FILE)
     elif ev.keycode == 38:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
             slideLock.release()
-        openFile(BACK_FILE)
+        changeFile(BACK_FILE)
     elif ev.keycode == 43:
         if slideT.isAlive():
             slideLock.acquire()
@@ -308,233 +536,6 @@ def onKeyPress(ev):
             slideLock.release()
             slideT = threading.Timer(0, slide)
             slideT.start()
-
-def nextCanReadFile(direct, now_file_pos):
-    global FILE_LIST
-    if direct is NEXT_FILE:
-        now_file_pos += 1
-    elif direct is BACK_FILE:
-        now_file_pos -= 1
-    now_file_pos %= len(FILE_LIST)
-    while FILE_LIST[now_file_pos]["CanRead"] is False:
-        if direct is BACK_FILE:
-            now_file_pos -= 1
-        else:
-            now_file_pos += 1
-        now_file_pos %= len(FILE_LIST)
-    return now_file_pos
-
-def openFile(direct):
-    global st1
-    st1 = time.time()
-    global CPS_FILELock
-    global mFilePos
-    global CPS_FILE
-    global FILE_LIST
-    global FILE_URI
-    global label
-    label.configure(image="")
-    label['text'] = "Loading"
-
-    file_pos = nextCanReadFile(direct, mFilePos)
-    return_fruit = False
-    # print(FILE_LIST[file_pos]["filename"])
-    filename = FILE_LIST[file_pos]["filename"]
-    if filename.endswith('rar'):
-        return_fruit = openRarFile(filename)
-    elif filename.endswith('zip'):
-        return_fruit = openZipFile(filename)
-
-    while not return_fruit:
-        if USE_FILE_MD5:
-            file_md5 = getFileMD5(FILE_URI + filename)
-        else:
-            file_md5 = getStringMD5(FILE_URI + filename)
-        try:
-            PWD_JSON[file_md5]
-        except:
-            PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
-        FILE_LIST[file_pos]["CanRead"] = False
-        file_pos = nextCanReadFile(direct, file_pos)
-        filename = FILE_LIST[file_pos]["filename"]
-        if filename.endswith('rar'):
-            return_fruit = openRarFile(filename)
-        elif filename.endswith('zip'):
-            return_fruit = openZipFile(filename)
-
-    t_pwd_json = json.dumps(PWD_JSON)
-    with open('./Pwd.json', 'w') as f:
-        f.write(t_pwd_json)
-
-    CPS_FILELock.acquire()
-    CPS_FILE = return_fruit
-    mFilePos = file_pos
-    CPS_FILELock.release()
-
-    return return_fruit
-
-def openZipFile(_filename):
-    global FILE_URI
-    global FILE_LIST
-    global PWD_JSON
-
-    if not os.path.exists(FILE_URI + _filename):
-        print("error:fileURI not exists")
-        exit()
-    # StartTime = time.time()
-    if USE_FILE_MD5:
-        file_md5 = getFileMD5(FILE_URI + _filename)
-    else:
-        file_md5 = getStringMD5(FILE_URI + _filename)
-    # print(time.time() - StartTime)
-
-    try:
-        if PWD_JSON[file_md5]["badfile"]:
-            return False
-    except:
-        pass
-    try:
-        t_cps_file = zipfile.ZipFile(FILE_URI + _filename)
-    except:
-        print(_filename + " open fail")
-        return False
-    if t_cps_file.infolist():
-        t_list = getImageList(t_cps_file)
-        if not t_list:
-            return False
-    try:
-        t_cps_file.testzip()
-        needs_password = False
-    except:
-        needs_password = True
-
-    if needs_password:
-        try:
-            pwd = PWD_JSON[file_md5]["password"]
-            if not pwd:
-                raise Exception
-            t_cps_file.setpassword(pwd.encode("utf-8"))
-            t_cps_file.open(t_list[0])
-        except:
-            has_pwd = False
-            try:
-                pwd_default = PWD_JSON["defaultPassword"]
-            except:
-                pwd_default = []
-            if pwd_default:
-                for p in pwd_default:
-                    try:
-                        t_cps_file.setpassword(p.encode("utf-8"))
-                        t_cps_file.open(t_list[0])
-                        has_pwd = True
-                        PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
-                        break
-                    except:
-                        pass
-            while not has_pwd:
-                pwd = _NONE
-                while pwd == _NONE:
-                    pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
-                if pwd == "skip":
-                    PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
-                    return False
-                try:
-                    t_cps_file.setpassword(pwd.encode("utf-8"))
-                    t_cps_file.open(t_list[0])
-                    has_pwd = True
-                    PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
-                except Exception as ex:
-                    print(ex)
-                    print("Password is WRONG !")
-    return t_cps_file
-
-def openRarFile(_filename):
-    global FILE_URI
-    global FILE_LIST
-    global PWD_JSON
-
-    if not os.path.exists(FILE_URI + _filename):
-        print("error:fileURI not exists")
-        exit()
-    # st = time.time()
-    if USE_FILE_MD5:
-        file_md5 = getFileMD5(FILE_URI + _filename)
-    else:
-        file_md5 = getStringMD5(FILE_URI + _filename)
-    # print("getFileMD5: %f"%(time.time() - st))
-
-    try:
-        if PWD_JSON[file_md5]["badfile"]:
-            return False
-    except:
-        pass
-    try:
-        t_cps_file = rarfile.RarFile(FILE_URI + _filename)
-    except:
-        print(_filename + " open fail")
-        return False
-    if t_cps_file.infolist():
-        t_list = getImageList(t_cps_file)
-        if not t_list:
-            return False
-
-    if t_cps_file.needs_password():
-        pwd = _NONE
-        s_reload = True
-        try:
-            pwd = PWD_JSON[file_md5]["password"]
-            if not pwd:
-                raise Exception
-            t_cps_file.setpassword(pwd)
-            # t_cps_file.read(t_cps_file.infolist()[0])
-            # t_cps_file.testrar()
-            s_reload = False
-        except:
-            has_pwd = False
-            try:
-                pwd_default = PWD_JSON["defaultPassword"]
-            except:
-                pwd_default = []
-            if pwd_default:
-                for p in pwd_default:
-                    try:
-                        t_cps_file.setpassword(p)
-                        # t_cps_file.read(t_list[0])
-                        t_cps_file.testrar()
-                        has_pwd = True
-                        pwd = p
-                        PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
-                        break
-                    except:
-                        pass
-            while not has_pwd:
-                pwd = _NONE
-                while pwd == _NONE:
-                    pwd = askstring(title='请输入密码', prompt="RaR File: " + _filename + "\n输入\"skip\"跳过此文件")
-                if pwd == "skip":
-                    PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
-                    return False
-                try:
-                    t_cps_file.setpassword(pwd)
-                    # t_cps_file.read(t_list[0])
-                    t_cps_file.testrar()
-                    has_pwd = True
-                    PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
-                except:
-                    print("Password is WRONG !")
-
-        # try:
-        #    t_cps_file.testrar()
-        # except:
-        #    return False
-        if s_reload:
-            t_cps_file.close()
-            t_cps_file = rarfile.RarFile(FILE_URI + _filename)
-            t_cps_file.setpassword(pwd)
-            # CPS_FILE.testrar()
-        if not getImageList(t_cps_file):
-            return False
-    return t_cps_file
 
 '''入口'''
 if __name__ == '__main__':
@@ -566,16 +567,12 @@ if __name__ == '__main__':
     fileNameList = os.listdir(FILE_URI)
     fileNameList = [f for f in fileNameList if (f.endswith('rar') or f.endswith('zip'))]
     FILE_LIST = [{"filename": fn, "CanRead": TRUE} for fn in fileNameList]
-    try:
-        mFilePos = FILE_LIST.index({"filename": t_filename, "CanRead": TRUE})
-    except:
-        mFilePos = 0
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
     mImgLoadQueueLock = threading.Lock()
     changeImgLock = threading.Lock()
-    CPS_FILELock = threading.Lock()
+    ChangeFileLock = threading.Lock()
     SLIDE_START = False
 
     try:
@@ -602,10 +599,14 @@ if __name__ == '__main__':
             with open('./Pwd.json', 'w') as f:
                 f.write(t_pwd_json)
 
-    openFile(CURRENT_FILE)
+    ChangeFileFlag = CURRENT_FILE
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
+    try:
+        guardTask.nowFilePos = FILE_LIST.index({"filename": t_filename, "CanRead": TRUE})
+    except:
+        guardTask.nowFilePos = 0
     guardTask.setDaemon(TRUE)
     loadTask = loadImgTh()
     loadTask.setDaemon(TRUE)
