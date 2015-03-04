@@ -32,20 +32,32 @@ NOCHANGE_FILE = 2
 JUMP_FILE = 3
 BAD_FILE = "bad_file"
 ANTIALIAS_SHOW_IMG = False
+CPS_CLASS = 0
+FILE_CLASS = 1
+
+class _fileImgInfo():
+    def __init__(self, filename=_NONE, uri=_NONE):
+            self.filename = filename
+            self.uri = uri
 
 class guardTh(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self.nextLoadImgPos = 0
-        self.nowFilePos = -1
-        self.nowFilename = _NONE
-        self.nowFile = _NONE
+        self.nowFileInfo = self._now_file_info()
         self.nowShowImgPos = 0
         self.imgCache = []
         self.imgList = []
         self.imgNum = 0
         self.shouldLoadImg = False
         self.shouldRefreshImg = False
+
+    class _now_file_info():
+        def __init__(self, pos=-1, filename=_NONE, file=_NONE, _class=CPS_CLASS):
+            self.FilePos = pos
+            self.Filename = filename
+            self.File = file
+            self.FileClass = _class
 
     def run(self):
         global mImgLoadQueueLock
@@ -67,20 +79,24 @@ class guardTh(threading.Thread):
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
-                FILE_LIST[self.nowFilePos]["CurrentPos"] = self.nowShowImgPos
+                FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
                 if ChangeFileFlag["direct"] is JUMP_FILE:
-                    self.nowFilePos = ChangeFileFlag["nowFilePos"]
+                    self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
                 ChangeFileFlag["direct"] = NOCHANGE_FILE
                 ChangeFileLock.release()
                 root.title("图片浏览器-Loading/%d" % len(FILE_LIST))
                 mImgLoadQueueLock.acquire()
-                self.openFile(t_direct)
-                self.nowShowImgPos = FILE_LIST[self.nowFilePos]["CurrentPos"]
+                if self.openFile(t_direct) is FILE_CLASS:
+                    t_file_class = FILE_CLASS
+                    self.imgList = self.getImageList(self.nowFileInfo.File, isfile=True)
+                else:
+                    t_file_class = CPS_CLASS
+                    self.imgList = self.getImageList(self.nowFileInfo.File)
+                self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
 
                 # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                 # print("Load File Time: " + str(time.time() - st1))
-                self.nowFilename = FILE_LIST[self.nowFilePos]["filename"].encode("utf-8").decode("utf-8")
-                self.imgList = self.getImageList(self.nowFile)
+                self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"].encode("utf-8").decode("utf-8")
                 changeImgLock.acquire()
                 mImgPos = self.nowShowImgPos
                 changeImgLock.release()
@@ -89,10 +105,10 @@ class guardTh(threading.Thread):
                 self.nextLoadImgPos = self.nowShowImgPos
                 self.shouldLoadImg = TRUE
                 self.shouldRefreshImg = TRUE
-                t_cps_file = self.nowFile
                 willLoadImgQueue = {
-                    "CPS_FILE": t_cps_file,
-                    "nowFilePos": self.nowFilePos,
+                    "CPS_FILE": self.nowFileInfo.File,
+                    "fileClass": t_file_class,
+                    "nowFilePos": self.nowFileInfo.FilePos,
                     "imgCache": self.imgCache,
                     "willLoadImgQueue": [{"imgInfo": self.imgList[self.nowShowImgPos],
                                           "imgPos": self.nowShowImgPos}]
@@ -165,12 +181,12 @@ class guardTh(threading.Thread):
                 if showImg is BAD_FILE:
                     label.configure(image="")
                     label['text'] = "Bad Image"
-                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFilePos + 1,
+                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFileInfo.FilePos + 1,
                                                                  len(FILE_LIST),
                                                                  self.nowShowImgPos + 1,
                                                                  self.imgNum,
                                                                  imgName,
-                                                                 self.nowFilename)
+                                                                 self.nowFileInfo.Filename)
                     root.title(title)
                     continue
                 img_w, img_h = showImg.size
@@ -189,14 +205,14 @@ class guardTh(threading.Thread):
                 else:
                     show_img_resize = showImg
                 wr, hr = show_img_resize.size
-                title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFilePos + 1,
+                title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFileInfo.FilePos + 1,
                                                                  len(FILE_LIST),
                                                                  self.nowShowImgPos + 1,
                                                                  self.imgNum,
                                                                  wr,
                                                                  hr,
                                                                  imgName,
-                                                                 self.nowFilename)
+                                                                 self.nowFileInfo.Filename)
                 root.title(title)
 
                 tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
@@ -230,11 +246,20 @@ class guardTh(threading.Thread):
         else:
             return pil_image.resize((width, height))
 
-    def getImageList(self, cps):
-        t_img_list = [info for info in cps.infolist()
-                   if(info.filename.endswith('jpg')
-                      or info.filename.endswith('png')
-                      or info.filename.endswith('gif'))]
+    def getImageList(self, cps, isfile=False):
+        if isfile:
+            if not cps.endswith("/"):
+                cps += "/"
+            file_name_list = os.listdir(cps)
+            t_img_list = [_fileImgInfo(filename=fn, uri=cps + fn) for fn in file_name_list
+                          if (fn[-3:].lower() == 'jpg'
+                              or fn[-3:].lower() == 'png'
+                              or fn[-3:].lower() == 'gif')]
+        else:
+            t_img_list = [info for info in cps.infolist()
+                       if(info.filename[-3:].lower() == 'jpg'
+                          or info.filename[-3:].lower() == 'png'
+                          or info.filename[-3:].lower() == 'gif')]
         return t_img_list
 
     def nextCanReadFile(self, direct, now_file_pos):
@@ -258,14 +283,20 @@ class guardTh(threading.Thread):
         global FILE_LIST
         global PWD_JSON
 
-        file_pos = self.nextCanReadFile(direct, self.nowFilePos)
+        file_pos = self.nextCanReadFile(direct, self.nowFileInfo.FilePos)
+
+        if FILE_LIST[file_pos]["fileClass"] is FILE_CLASS:
+            self.nowFileInfo.File = FILE_LIST[file_pos]["fileUri"]
+            self.nowFileInfo.FilePos = file_pos
+            self.nowFileInfo.FileClass = FILE_CLASS
+            return FILE_CLASS
         return_fruit = False
         # print(FILE_LIST[file_pos]["filename"])
         filename = FILE_LIST[file_pos]["filename"]
         file_uri = FILE_LIST[file_pos]["fileUri"]
-        if filename.endswith('rar'):
+        if filename[-3:].lower() == 'rar':
             return_fruit = self.openRarFile(file_pos)
-        elif filename.endswith('zip'):
+        elif filename[-3:].lower() == 'zip':
             return_fruit = self.openZipFile(file_pos)
 
         while not return_fruit:
@@ -281,16 +312,16 @@ class guardTh(threading.Thread):
             file_pos = self.nextCanReadFile(direct, file_pos)
             filename = FILE_LIST[file_pos]["filename"]
             file_uri = FILE_LIST[file_pos]["fileUri"]
-            if filename.endswith('rar'):
+            if filename[-3:].lower() == 'rar':
                 return_fruit = self.openRarFile(file_pos)
-            elif filename.endswith('zip'):
+            elif filename[-3:].lower() == 'zip':
                 return_fruit = self.openZipFile(file_pos)
 
         t_pwd_json = json.dumps(PWD_JSON)
         with open('./Pwd.json', 'w') as f:
             f.write(t_pwd_json)
-        self.nowFile = return_fruit
-        self.nowFilePos = file_pos
+        self.nowFileInfo.File = return_fruit
+        self.nowFileInfo.FilePos = file_pos
 
         return return_fruit
 
@@ -467,6 +498,7 @@ class loadImgTh(threading.Thread):
         self.mLoadingFilePos = -1
         self.nowLoadImgInfo = {}
         self.cpsFile = _NONE
+        self.fileClass = CPS_CLASS
 
     def run(self):
         global willLoadImgQueue
@@ -477,18 +509,19 @@ class loadImgTh(threading.Thread):
                 continue
             if self.nowLoadImgInfo:
                 # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-                try:
-                    data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
+                if self.fileClass is FILE_CLASS:
                     try:
-                        pil_image = PIL.Image.open(io.BytesIO(data))
-                        # print(pil_image.mode)
+                        pil_image = PIL.Image.open(self.nowLoadImgInfo["imgInfo"].uri)
                     except Exception as ex:
                         print(ex)
                         pil_image = BAD_FILE
-                except Exception as ex:
-                    print(ex)
-                    # PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
-                    pil_image = BAD_FILE
+                else:
+                    try:
+                        data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
+                        pil_image = PIL.Image.open(io.BytesIO(data))
+                    except Exception as ex:
+                        print(ex)
+                        pil_image = BAD_FILE
                 # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
                 # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
 
@@ -501,6 +534,7 @@ class loadImgTh(threading.Thread):
             else:
                 self.cpsFile = willLoadImgQueue["CPS_FILE"]
                 self.mLoadingFilePos = willLoadImgQueue["nowFilePos"]
+                self.fileClass = willLoadImgQueue["fileClass"]
 
             self.nowLoadImgInfo = _NONE
             while TRUE:
@@ -588,7 +622,7 @@ def onKeyPress(ev):
     nTime = time.time()
     global slideT
     global SLIDE_START
-    print(ev.keycode)
+    # print(ev.keycode)
     if ev.keycode == 39:
         if slideT.isAlive():
             slideLock.acquire()
@@ -676,11 +710,16 @@ def getFileList(file_uri, subfile=False):
     if not file_uri.endswith("/"):
         file_uri += "/"
     fileNameList = os.listdir(file_uri)
+    has_pic = False
     for sub_file_name in fileNameList:
-        if (sub_file_name.endswith('rar') or sub_file_name.endswith('zip')):
-            t_file_list.append({"filename": sub_file_name, "fileUri": file_uri, "CanRead": TRUE, "CurrentPos": 0})
+        if sub_file_name[-3:].lower() == 'rar' or sub_file_name[-3:].lower() == 'zip':
+            t_file_list.append({"filename": sub_file_name, "fileUri": file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE, "CurrentPos": 0})
+        elif sub_file_name[-3:].lower() == 'jpg' or sub_file_name[-3:].lower() == 'png' or sub_file_name[-3:].lower() == 'gif':
+            has_pic = True
         elif subfile and os.path.isdir(file_uri + sub_file_name):
             t_file_list += getFileList(file_uri + sub_file_name, subfile=True)
+    if has_pic:
+        t_file_list.append({"filename": file_uri.split("/")[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
     return t_file_list
 
 
@@ -752,7 +791,7 @@ if __name__ == '__main__':
 
     guardTask = guardTh()
     try:
-        guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "CanRead": TRUE})
+        guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
     except:
         guardTask.nowFilePos = 0
     guardTask.setDaemon(TRUE)
