@@ -1,5 +1,8 @@
 #Linux下浏览压缩文件内图片的小工具
-
+---   
+    写这个的起因是Linux下漫画或者说压缩包图片浏览器每个功能都不尽如人意，在面对一大批带密码的压缩包时很是蛋疼，所以就有了这个工具，也顺便学习Python    
+    正所谓“七大罪才是人类进步的阶梯” 
+---   
 ###特点：
 * 支持zip和rar文件
 * 可将带图片的文件夹作为压缩包浏览 **_NEW_**
@@ -14,11 +17,18 @@
 * 特有排序规则，正确排序文件名常见的"a1"<"a10"<"a2"问题 **_TEST_**
 
 ###缺点：
+* 对zip文件的效率较低
 * 没有文件列表浏览界面
 * 尚未加入文件预载入，在跳转文件时对无图片文件、大文件载入和进行默认密码测试会耗去较多时间(检测过一次的文件会被标记，二次加载会跳过检测)
 
 ###注意：
 * 由于python2.7中zipfile对中、日文支持太差，故使用python3
+* 本工具主要是针对Linux开发，虽然也做过一点兼容性使其可以在win下运行，但毕竟win下比这个好的工具太多了，除了简单兼容之外是不会做太多的Bug测试优化的。但如果还是想在win下尝试一下的话可以按以下步骤安装python环境：   
+    1. 在[Python官网](https://www.python.org/downloads/windows/)下载安装最新的python3.4并安装，一切按默认，其会自动安装tk和pip   
+    2. win+R键输入“cmd”启动命令行，输入：   
+        $ pip install rarfile   
+        $ pip install pillow   
+    3. 然后就可以双击py文件运行了
 * 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令：  
         $ sudo apt-get install python3-pil  
         $ sudo apt-get install python3-tk  

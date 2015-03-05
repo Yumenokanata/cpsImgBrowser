@@ -11,6 +11,7 @@ import threading
 import time
 import zipfile
 import random
+import platform
 import PIL
 from PIL import Image
 from PIL.ImageTk import *
@@ -34,6 +35,40 @@ BAD_FILE = "bad_file"
 ANTIALIAS_SHOW_IMG = False
 CPS_CLASS = 0
 FILE_CLASS = 1
+PLATFORM = platform.system()
+
+class _KeyCode():
+    def __init__(self, _platform):
+        if platform.system() == 'Linux':
+            self.codeA = 38
+            self.codeS = 39
+            self.codeD = 40
+            self.codeW = 25
+            self.codeE = 26
+            self.codeR = 27
+            self.codeC = 54
+            self.codeLeft = 113
+            self.codeRight = 114
+            self.codeUp = 111
+            self.codeDown = 116
+            self.codeO = 32
+            self.codeP = 33
+            self.codeM = 58
+        elif platform.system() == 'Windows':
+            self.codeA = 65
+            self.codeS = 83
+            self.codeD = 68
+            self.codeW = 87
+            self.codeE = 69
+            self.codeR = 82
+            self.codeC = 67
+            self.codeLeft = 37
+            self.codeRight = 39
+            self.codeUp = 38
+            self.codeDown = 40
+            self.codeO = 79
+            self.codeP = 80
+            self.codeM = 77
 
 class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
@@ -257,8 +292,8 @@ class guardTh(threading.Thread):
 
     def getImageList(self, cps, isfile=False):
         if isfile:
-            if not cps.endswith("/"):
-                cps += "/"
+            if not cps.endswith(FILE_SIGN):
+                cps += FILE_SIGN
             file_name_list = os.listdir(cps)
             t_img_list = [_fileImgInfo(filename=fn, uri=cps + fn) for fn in file_name_list
                           if (fn[-3:].lower() == 'jpg'
@@ -307,12 +342,12 @@ class guardTh(threading.Thread):
     def cmpString(self, s1, s2):
         # Return one bigger than two
         # TODO File sort
-        if s1.count("/") != s1.count("/"):
-            return s1.count("/") > s1.count("/")
-        if s1.count("/") > 0:
-            for i,a in enumerate(s1.split("/")):
-                if a != s2.split("/")[i]:
-                    return a > s2.split("/")[i]
+        if s1.count(FILE_SIGN) != s1.count(FILE_SIGN):
+            return s1.count(FILE_SIGN) > s1.count(FILE_SIGN)
+        if s1.count(FILE_SIGN) > 0:
+            for i,a in enumerate(s1.split(FILE_SIGN)):
+                if a != s2.split(FILE_SIGN)[i]:
+                    return a > s2.split(FILE_SIGN)[i]
         for i,a in enumerate(s1):
             try:
                 if a != s2[i]:
@@ -404,7 +439,7 @@ class guardTh(threading.Thread):
                 return_fruit = self.openZipFile(file_pos)
 
         t_pwd_json = json.dumps(PWD_JSON)
-        with open('./Pwd.json', 'w') as f:
+        with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
             f.write(t_pwd_json)
         self.nowFileInfo.File = return_fruit
         self.nowFileInfo.FilePos = file_pos
@@ -474,7 +509,15 @@ class guardTh(threading.Thread):
                 while not has_pwd:
                     pwd = _NONE
                     while not pwd:
-                        pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                        if PLATFORM == 'Windows':
+                            label.configure(image="")
+                            label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
+                            print("Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            pwd = input('请输入密码: ')
+                            sys.stdout.flush()
+                        else:
+                            pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    label['text'] = "Loading"
                     if pwd == "skip":
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
@@ -541,8 +584,8 @@ class guardTh(threading.Thread):
                     for p in pwd_default:
                         try:
                             t_cps_file.setpassword(p)
-                            # t_cps_file.read(t_list[0])
-                            t_cps_file.testrar()
+                            t_cps_file.open(t_cps_file.infolist()[0])
+                            #t_cps_file.testrar()
                             has_pwd = True
                             pwd = p
                             PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
@@ -552,7 +595,15 @@ class guardTh(threading.Thread):
                 while not has_pwd:
                     pwd = _NONE
                     while not pwd:
-                        pwd = askstring(title='请输入密码', prompt="RaR File: " + _filename + "\n输入\"skip\"跳过此文件")
+                        if PLATFORM == 'Windows':
+                            label.configure(image="")
+                            label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
+                            print("Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            pwd = input('请输入密码: ')
+                            sys.stdout.flush()
+                        else:
+                            pwd = askstring(title='请输入密码', prompt="Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    label['text'] = "Loading"
                     if pwd == "skip":
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
@@ -709,7 +760,7 @@ def onKeyPress(ev):
     global slideT
     global SLIDE_START
     # print(ev.keycode)
-    if ev.keycode == 39:
+    if ev.keycode == KEY_CODE.codeS:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
@@ -727,24 +778,24 @@ def onKeyPress(ev):
             SLIDE_START = False
             slideLock.release()
 
-    if ev.keycode == 113:
+    if ev.keycode == KEY_CODE.codeLeft:
         ShowPic(BACK_IMG)
-    elif ev.keycode == 114:
+    elif ev.keycode == KEY_CODE.codeRight:
         ShowPic(NEXT_IMG)
-    elif ev.keycode == 40 or ev.keycode == 116:
+    elif ev.keycode == KEY_CODE.codeD or ev.keycode == KEY_CODE.codeDown:
         changeFile(NEXT_FILE)
-    elif ev.keycode == 38 or ev.keycode == 111:
+    elif ev.keycode == KEY_CODE.codeA or ev.keycode == KEY_CODE.codeUp:
         changeFile(BACK_FILE)
-    elif ev.keycode == 33:
+    elif ev.keycode == KEY_CODE.codeP:
         global SLIDE_TIME
-        t_slide_time = askstring(title='设置幻灯片时间', prompt="当前时间: %d" % (SLIDE_TIME))
+        t_slide_time = askstring(title='设置幻灯片时间', prompt="当前时间: %ds" % (SLIDE_TIME))
         try:
             t_slide_time = int(t_slide_time)
             SLIDE_TIME = max([1, t_slide_time])
         except:
             print("输入错误")
             # showerror(title="错误", message="输入错误！")
-    elif ev.keycode == 25:
+    elif ev.keycode == KEY_CODE.codeW:
         jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
         try:
             jump_num = int(jump_num)
@@ -753,7 +804,7 @@ def onKeyPress(ev):
             changeFile(JUMP_FILE, jump_file=jump_num - 1)
         except:
             showerror(title="错误", message="输入错误！")
-    elif ev.keycode == 26:
+    elif ev.keycode == KEY_CODE.codeE:
         jump_num = askstring(title='图片跳转', prompt="请输入跳转到的图片序号: ")
         try:
             jump_num = int(jump_num)
@@ -761,17 +812,17 @@ def onKeyPress(ev):
             ShowPic(JUMP_IMG, jump_num=jump_num - 1)
         except:
             print("输入错误")
-    elif ev.keycode == 27:
+    elif ev.keycode == KEY_CODE.codeR:
         if askquestion(title="乱序浏览", message="是否打乱图片顺序?") == YES:
             changeImgLock.acquire()
             global RandomLoadImgFlag
             RandomLoadImgFlag = True
             changeImgLock.release()
-    elif ev.keycode == 54:
+    elif ev.keycode == KEY_CODE.codeC:
         if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
             jump_num = random.randint(0, len(FILE_LIST))
             changeFile(JUMP_FILE, jump_file=jump_num)
-    elif ev.keycode == 32:
+    elif ev.keycode == KEY_CODE.codeO:
         global ANTIALIAS_SHOW_IMG
         if ANTIALIAS_SHOW_IMG:
             if askquestion(title="抗锯齿", message="是否关闭抗锯齿?") == YES:
@@ -779,22 +830,29 @@ def onKeyPress(ev):
         else:
             if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
                 ANTIALIAS_SHOW_IMG = True
-    elif ev.keycode == 58:
-        add_password = askstring(title='默认密码', prompt="请输入欲添加的可待测试默认密码: \n  1.以\",\"分隔多个\n  2.多余的空格也会被视为密码")
-        add_password = add_password.split(",")
+    elif ev.keycode == KEY_CODE.codeM:
+        if PWD_JSON["defaultPassword"]:
+            dpw = PWD_JSON["defaultPassword"][0]
+            for pw in PWD_JSON["defaultPassword"][1:]:
+                dpw = dpw + ";" + pw
+        add_password = askstring(title='默认密码', prompt="请输入欲添加的可待测试默认密码: \n  1.以\";\"分隔多个\n  2.多余的空格也会被视为密码", initialvalue=dpw)
+        try:
+            add_password = add_password.split(";")
+        except:
+            return
         for ap in add_password:
             try:
                 PWD_JSON["defaultPassword"].index(ap)
             except:
                 PWD_JSON["defaultPassword"].append(ap)
         t_pwd_json = json.dumps(PWD_JSON)
-        with open('./Pwd.json', 'w') as f:
+        with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
             f.write(t_pwd_json)
 
 def getFileList(file_uri, subfile=False):
     t_file_list = []
-    if not file_uri.endswith("/"):
-        file_uri += "/"
+    if not file_uri.endswith(FILE_SIGN):
+        file_uri += FILE_SIGN
     fileNameList = os.listdir(file_uri)
     has_pic = False
     for sub_file_name in fileNameList:
@@ -805,14 +863,20 @@ def getFileList(file_uri, subfile=False):
         elif subfile and os.path.isdir(file_uri + sub_file_name):
             t_file_list += getFileList(file_uri + sub_file_name, subfile=True)
     if has_pic:
-        t_file_list.append({"filename": file_uri.split("/")[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
+        t_file_list.append({"filename": file_uri.split(FILE_SIGN)[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
     return t_file_list
-
 
 '''入口'''
 if __name__ == '__main__':
+    if PLATFORM == 'Linux':
+        FILE_SIGN = "/"
+        KEY_CODE = _KeyCode('Linux')
+    elif PLATFORM == 'Windows':
+        FILE_SIGN = "\\"
+        KEY_CODE = _KeyCode('Windows')
+
     root = tk.Tk()
-    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width())/2, (600 - root.winfo_height())/2) )
+    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
     mWinChanged = False
@@ -835,7 +899,7 @@ if __name__ == '__main__':
 
     t_file_name = _NONE
     if os.path.isfile(MAIN_FILE_URI):
-        t_file_name = MAIN_FILE_URI.split("/")[-1]
+        t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
         MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
 
     FILE_LIST = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
@@ -848,10 +912,10 @@ if __name__ == '__main__':
     SLIDE_START = False
 
     try:
-        with open('./Pwd.json', 'r') as f:
+        with open('.' + FILE_SIGN + 'Pwd.json', 'r') as f:
             pwdJson = f.read()
     except:
-        with open('./Pwd.json', 'w') as f:
+        with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
             f.write('')
         pwdJson = ''
     try:
@@ -868,7 +932,7 @@ if __name__ == '__main__':
                 changed = True
         if changed:
             t_pwd_json = json.dumps(PWD_JSON)
-            with open('./Pwd.json', 'w') as f:
+            with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
                 f.write(t_pwd_json)
 
     ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
