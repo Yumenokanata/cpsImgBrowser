@@ -204,6 +204,10 @@ class guardTh(threading.Thread):
                     show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
                 else:
                     show_img_resize = showImg
+                try:
+                    tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
+                except:
+                    show_img_resize = BAD_FILE
 
                 if show_img_resize is BAD_FILE:
                     label.configure(image="")
@@ -228,7 +232,6 @@ class guardTh(threading.Thread):
                                                                  self.nowFileInfo.Filename)
                 root.title(title)
 
-                tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
                 label['text']=""
                 label.configure(image = tk_img)
                 label.image = tk_img
@@ -271,16 +274,15 @@ class guardTh(threading.Thread):
                           if (fn[-3:].lower() == 'jpg'
                               or fn[-3:].lower() == 'png'
                               or fn[-3:].lower() == 'gif')]
-            st4 = time.time()
-            self.sortFileName(t_img_list)
-            # t_img_list.sort(key=lambda x: x.filename)
-            print("Sort Time: %f / %d" % (time.time() - st4, len(t_img_list)))
+            # TODO use uri to key
         else:
             t_img_list = [info for info in cps.infolist()
                        if(info.filename[-3:].lower() == 'jpg'
                           or info.filename[-3:].lower() == 'png'
                           or info.filename[-3:].lower() == 'gif')]
-            t_img_list.sort(key=lambda x: x.filename)
+        # st4 = time.time()
+        self.sortFileName(t_img_list)
+        # print("Sort Time: %f / %d" % (time.time() - st4, len(t_img_list)))
         return t_img_list
 
     def printList(self, t_list):
@@ -314,6 +316,13 @@ class guardTh(threading.Thread):
 
     def cmpString(self, s1, s2):
         # Return one bigger than two
+        # TODO File sort
+        if s1.count("/") != s1.count("/"):
+            return s1.count("/") > s1.count("/")
+        if s1.count("/") > 0:
+            for i,a in enumerate(s1.split("/")):
+                if a != s2.split("/")[i]:
+                    return a > s2.split("/")[i]
         for i,a in enumerate(s1):
             try:
                 if a != s2[i]:
