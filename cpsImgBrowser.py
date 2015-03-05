@@ -110,17 +110,9 @@ class guardTh(threading.Thread):
                     "fileClass": t_file_class,
                     "nowFilePos": self.nowFileInfo.FilePos,
                     "imgCache": self.imgCache,
-                    "willLoadImgQueue": [{"imgInfo": self.imgList[self.nowShowImgPos],
-                                          "imgPos": self.nowShowImgPos}]
+                    "willLoadImgQueue": []
                     }
-                list_num = len(self.imgList)
-                for i in range(min([25, list_num])):
-                    t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                 "imgPos": t_nextLoadImgPos})
-                    t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                 "imgPos": t_nextLoadImgPos})
+                self.addQueue(self.nowShowImgPos)
                 mImgLoadQueueLock.release()
             else:
                 ChangeFileLock.release()
@@ -134,16 +126,7 @@ class guardTh(threading.Thread):
                     RandomLoadImgFlag = False
                     self.imgCache = [_NONE for i in range(len(self.imgList))]
                     willLoadImgQueue["imgCache"] = self.imgCache
-                    willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[self.nowShowImgPos],
-                                                             "imgPos": self.nowShowImgPos}]
-                    list_num = len(self.imgList)
-                    for i in range(min([25, list_num])):
-                        t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
-                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                     "imgPos": t_nextLoadImgPos})
-                        t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
-                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                     "imgPos": t_nextLoadImgPos})
+                    self.addQueue(self.nowShowImgPos)
                     mImgLoadQueueLock.release()
                 elif self.nowShowImgPos != mImgPos:
                     mImgPos %= len(self.imgList)
@@ -151,21 +134,13 @@ class guardTh(threading.Thread):
                     self.shouldRefreshImg = TRUE
 
                     mImgLoadQueueLock.acquire()
-                    willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[self.nowShowImgPos],
-                                                             "imgPos": self.nowShowImgPos}]
-                    list_num = len(self.imgList)
-                    for i in range(min([25, list_num])):
-                        t_nextLoadImgPos = (self.nowShowImgPos + i) % list_num
-                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                     "imgPos": t_nextLoadImgPos})
-                        t_nextLoadImgPos = (self.nowShowImgPos - i) % list_num
-                        willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                     "imgPos": t_nextLoadImgPos})
+                    self.addQueue(self.nowShowImgPos)
                     mImgLoadQueueLock.release()
                 changeImgLock.release()
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 # print("Change Img Time: %f " % (time.time() - nTime))
+                mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
@@ -188,6 +163,7 @@ class guardTh(threading.Thread):
                                                                  imgName,
                                                                  self.nowFileInfo.Filename)
                     root.title(title)
+                    mImgLoadQueueLock.release()
                     continue
                 img_w, img_h = showImg.size
                 win_h = root.winfo_height()
@@ -219,6 +195,7 @@ class guardTh(threading.Thread):
                                                                  imgName,
                                                                  self.nowFileInfo.Filename)
                     root.title(title)
+                    mImgLoadQueueLock.release()
                     continue
 
                 wr, hr = show_img_resize.size
@@ -238,6 +215,19 @@ class guardTh(threading.Thread):
                 label.pack(padx=5, pady=5)
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
+                mImgLoadQueueLock.release()
+
+    def addQueue(self, start_pos):
+        willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[start_pos],
+                                                 "imgPos": start_pos}]
+        list_num = len(self.imgList)
+        for i in range(min([30, list_num])):
+            t_nextLoadImgPos = (start_pos + i) % list_num
+            willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                         "imgPos": t_nextLoadImgPos})
+            t_nextLoadImgPos = (start_pos - i) % list_num
+            willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                         "imgPos": t_nextLoadImgPos})
 
     def getStringMD5(self, string):
         return hashlib.md5(string.encode("utf-8")).hexdigest()
