@@ -1,8 +1,9 @@
 #Linux下浏览压缩文件内图片的小工具
----   
-    写这个的起因是Linux下漫画或者说压缩包图片浏览器每个功能都不尽如人意，在面对一大批带密码的压缩包时很是蛋疼，所以就有了这个工具，也顺便学习Python    
-    正所谓“七大罪才是人类进步的阶梯” 
----   
+===   
+写这个的起因是Linux下漫画或者说压缩包图片浏览器每个功能都不尽如人意，
+在面对一大批带密码的压缩包时很是蛋疼，所以就有了这个工具，也顺便学习Python.    
+正所谓“七大罪才是人类进步的阶梯” 
+
 ###特点：
 * 支持zip和rar文件
 * 可将带图片的文件夹作为压缩包浏览 **_NEW_**
@@ -29,11 +30,11 @@
         $ pip install rarfile   
         $ pip install pillow   
     3. 然后就可以双击py文件运行了
-* 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令：  
-        $ sudo apt-get install python3-pil  
-        $ sudo apt-get install python3-tk  
-        $ sudo apt-get install python3-pip  
-        $ sudo pip install rarfile  
+* 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令:
+    $ sudo apt-get install python3-pil
+    $ sudo apt-get install python3-tk
+    $ sudo apt-get install python3-pip
+    $ sudo pip install rarfile
 * 现大部分的卡顿在于图片文件的载入和重绘，也就是zipfile的read函数和tk界面绘制：   
 按键事件->轮询响应事件(0.0001s ~ 0.0002s)->载入图片(0.5s ~ 12s)->显示(0.4s ~ 1.0s)    
 **现已加入抗锯齿手动设置，默认为无抗锯齿，开启和关闭抗锯齿载入时间相差0.7s ~ 10s**
