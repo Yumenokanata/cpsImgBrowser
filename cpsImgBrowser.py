@@ -271,12 +271,60 @@ class guardTh(threading.Thread):
                           if (fn[-3:].lower() == 'jpg'
                               or fn[-3:].lower() == 'png'
                               or fn[-3:].lower() == 'gif')]
+            st4 = time.time()
+            self.sortFileName(t_img_list)
+            # t_img_list.sort(key=lambda x: x.filename)
+            print("Sort Time: %f / %d" % (time.time() - st4, len(t_img_list)))
         else:
             t_img_list = [info for info in cps.infolist()
                        if(info.filename[-3:].lower() == 'jpg'
                           or info.filename[-3:].lower() == 'png'
                           or info.filename[-3:].lower() == 'gif')]
+            t_img_list.sort(key=lambda x: x.filename)
         return t_img_list
+
+    def printList(self, t_list):
+        str1 = ""
+        for n in t_list:
+            str1 = str1 + str(n) + ","
+        print(str1)
+
+    def sortFileName(self, t_list):
+        self.quickSort(t_list, 0, len(t_list) - 1)
+
+    def quickSort(self, t_list, left, right):
+        if left < right:
+            pivot = int((right + left) / 2)
+            pivot = self.partition(t_list, left, right, pivot)
+            self.quickSort(t_list, left, pivot - 1)
+            self.quickSort(t_list, pivot + 1, right)
+
+    def partition(self, t_list, left, right, pivot):
+        # print("partition:  left: %d right: %d pivot: %d" % (left, right, pivot))
+        pivot_value = t_list[pivot].filename
+        self.swap(t_list, pivot, right)
+        pivot = left
+
+        for i in range(left, right):
+            if self.cmpString(pivot_value, t_list[i].filename):
+                self.swap(t_list, i, pivot)
+                pivot += 1
+        self.swap(t_list, pivot, right)
+        return pivot
+
+    def cmpString(self, s1, s2):
+        # Return one bigger than two
+        if len(s1) == len(s2):
+            return s1 > s2
+        else:
+            return len(s1) > len(s2)
+
+    def swap(self, t_list, x, y):
+        if x == y:
+            return
+        temp_value = t_list[x]
+        t_list[x] = t_list[y]
+        t_list[y] = temp_value
 
     def nextCanReadFile(self, direct, now_file_pos):
         global FILE_LIST
@@ -750,7 +798,7 @@ if __name__ == '__main__':
     label.pack(padx=15, pady=15, expand=1, fill="both")
 
     if len(sys.argv) < 2:
-        fd = LoadFileDialog(root, title="要打开的文件")
+        fd = FileDialog(root, title="要打开的文件")
         MAIN_FILE_URI = fd.go()
         if MAIN_FILE_URI == _NONE:
             print("URI is wrong")
