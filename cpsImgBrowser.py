@@ -314,10 +314,33 @@ class guardTh(threading.Thread):
 
     def cmpString(self, s1, s2):
         # Return one bigger than two
-        if len(s1) == len(s2):
-            return s1 > s2
-        else:
-            return len(s1) > len(s2)
+        for i,a in enumerate(s1):
+            try:
+                if a != s2[i]:
+                    isNum = 0
+                    try:
+                        n1 = int(a)
+                        isNum += 1
+                    except:
+                        pass
+                    try:
+                        n2 = int(s2[i])
+                        isNum += 1
+                    except:
+                        pass
+                    if isNum > 0:
+                        if len(s1) == len(s2):
+                            return s1 > s2
+                        else:
+                            return len(s1) > len(s2)
+                    else:
+                        return s1 > s2
+            except:
+                if len(s1) == len(s2):
+                    return s1 > s2
+                else:
+                    return len(s1) > len(s2)
+        return True
 
     def swap(self, t_list, x, y):
         if x == y:
