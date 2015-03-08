@@ -2,7 +2,6 @@
 # coding=utf-8
 
 import io
-import urllib
 import json
 import os
 import rarfile
@@ -11,6 +10,7 @@ import threading
 import time
 import zipfile
 import random
+import getpass
 import platform
 import PIL
 from PIL import Image
@@ -212,7 +212,9 @@ class guardTh(threading.Thread):
                 if scale <= 1:
                     box_height = img_h * scale
                     box_width = img_w * scale
+                    st5 = time.time()
                     show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
+                    print("Load Resize Time: %f" % (time.time() - st5))
                 else:
                     show_img_resize = showImg
                 try:
@@ -637,6 +639,27 @@ class loadImgTh(threading.Thread):
         self.cpsFile = _NONE
         self.fileClass = CPS_CLASS
 
+    def LoadImg(self,t_imgInfo, t_fileClass, t_cpsFile):
+        # TODO 大图优化
+        # TODO gif
+        # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
+        if t_fileClass is FILE_CLASS:
+            try:
+                pil_image = PIL.Image.open(t_imgInfo["imgInfo"].uri)
+            except Exception as ex:
+                print(ex)
+                pil_image = BAD_FILE
+        else:
+            try:
+                data = t_cpsFile.read(t_imgInfo["imgInfo"])
+                pil_image = PIL.Image.open(io.BytesIO(data))
+            except Exception as ex:
+                print(ex)
+                pil_image = BAD_FILE
+        # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
+        # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
+        return pil_image
+
     def run(self):
         global willLoadImgQueue
         global mImgLoadQueueLock
@@ -645,22 +668,7 @@ class loadImgTh(threading.Thread):
             if not willLoadImgQueue:
                 continue
             if self.nowLoadImgInfo:
-                # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-                if self.fileClass is FILE_CLASS:
-                    try:
-                        pil_image = PIL.Image.open(self.nowLoadImgInfo["imgInfo"].uri)
-                    except Exception as ex:
-                        print(ex)
-                        pil_image = BAD_FILE
-                else:
-                    try:
-                        data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
-                        pil_image = PIL.Image.open(io.BytesIO(data))
-                    except Exception as ex:
-                        print(ex)
-                        pil_image = BAD_FILE
-                # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
-                # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
+                pil_image = self.LoadImg(self.nowLoadImgInfo, self.fileClass, self.cpsFile)
 
             mImgLoadQueueLock.acquire()
             # if willLoadImgQueue["willLoadImgQueue"]:
@@ -682,6 +690,544 @@ class loadImgTh(threading.Thread):
                 if not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]:
                     break
             mImgLoadQueueLock.release()
+
+
+OPEN_FILE = 1
+OPEN_URI = 0
+USER_NAME = getpass.getuser()
+
+class mountInfo():
+    def __init__(self):
+        pass
+
+class fileInfo():
+    def __init__(self, path):
+        # print(type(path))
+        if os.path.isdir(path):
+            if not path.endswith('/'):
+                path += '/'
+            self.path = path
+            self.filename = path.split('/')[-2]
+            self.ctime = os.path.getctime(path)
+            self.atime = os.path.getatime(path)
+            self.size = 0
+        elif os.path.isfile(path):
+            self.path = path
+            self.filename = path.split('/')[-1]
+            self.ctime = os.path.getctime(path)
+            self.atime = os.path.getatime(path)
+            self.size = os.path.getsize(path)
+        else:
+            raise
+
+class myTable(Canvas):
+
+    def __init__(self, master=None, rowWidth=170, rowHeight=25, titleHeight=25, column=0, row=0, data=[], ):
+        Canvas.__init__(self, master=master)
+        self.column = column
+        self.row = row
+        self.tableData = data
+        self.tableRect = []
+        self.rowWidth = rowWidth
+        self.rowHeight = rowHeight
+        self.titleHeight = titleHeight
+        self.select_row = -1
+        self.bind('<Double-Button-1>', self.onDoubleClick)
+        self.bind('<Button-4>', self.mouseWheel, add='+')
+        self.bind('<Button-5>', self.mouseWheel, add='+')
+        self.bind('<Button-1>', self.onClick)
+        self.scrollY = 0
+        self.minScrollY = 0
+        self.TableLines = []
+        self.x_list = []
+        self.columnWidthList = []
+        self.titleCommand = None
+        self.titlesRect = []
+        self.titles = []
+        self.tableCommand = None
+        h = self.winfo_height()
+        if h != 1:
+            self.height = h
+        else:
+            self.height = None
+
+        self.SELECT_COLOR = '#FF7F50'
+        self.BLACK_COLOR = '#F5F5F5'
+        self.WHITE_COLOR = 'white'
+        self.TITLE_COLOR = '#D3D3D3'
+
+    def draw(self):
+        if self.tableRect:
+            for row in self.tableRect:
+                self.delete(row[0])
+                for col in row[1]:
+                    self.delete(col)
+        if self.TableLines:
+            for t_line in self.TableLines:
+                self.delete(t_line)
+        self.tableRect = []
+        self.TableLines = []
+        if self.height:
+            h = self.height
+        else:
+            h = 600
+        self.tableRect = []
+        for row in range(self.row):
+            t_rowList = []
+            if row % 2 == 1:
+                bg = self.WHITE_COLOR
+            else:
+                bg = self.BLACK_COLOR
+            tag = 'r' + str(row)
+            t_x = 2
+            t_y = self.scrollY + self.titleHeight + row * self.rowHeight
+            t_width = 2 + self.x_list[-1] + self.columnWidthList[-1]
+            t_height = self.rowHeight
+            if t_y > 0:
+                if t_y > h:
+                    break
+                t_rect = self.create_rectangle(t_x,
+                                               t_y,
+                                               t_x + t_width,
+                                               t_y + t_height,
+                                               width=1,
+                                               tags=tag,
+                                               fill=bg)
+                # self.tag_bind(tag, '<Button-1>', self.onClick)
+                for col in range(self.column):
+                    t_text = self.create_text(10 + self.x_list[col],
+                                              3 + t_y,
+                                              anchor='nw',
+                                              text=self.tableData[row][col])
+                    t_rowList.append(t_text)
+                self.tableRect.append([t_rect, t_rowList, t_x, t_y, row])
+        for col in range(1, self.column):
+            self.TableLines.append(self.create_line((1 + self.x_list[col], self.titleHeight, 1 + self.x_list[col], self.titleHeight + self.row * self.rowHeight)))
+
+    def resetColumnSize(self, columnWidthList):
+        # self.rowHeight = rowHeight
+        # self.titleHeight = titleHeight
+        x_list = []
+        t_x_offset = 1
+        if columnWidthList == []:
+            for col_w in range(self.column):
+                columnWidthList.append(self.rowWidth)
+                x_list.append(t_x_offset)
+                t_x_offset += self.rowWidth
+        else:
+            if self.column != len(columnWidthList):
+                raise
+            for col_w in columnWidthList:
+                x_list.append(t_x_offset)
+                t_x_offset += col_w
+        self.columnWidthList = columnWidthList
+        self.x_list = x_list
+
+    def refreshTitle(self, titles=[]):
+        if self.titlesRect:
+            for t in self.titlesRect:
+                self.delete(t[0])
+                self.delete(t[1])
+        if titles:
+            self.titles = titles
+        self.titlesRect = []
+        for col in range(self.column):
+            tag = 'bt' + str(col)
+            t_rect = self.create_rectangle(1 + self.x_list[col],
+                                           1,
+                                           3 + self.x_list[col] + self.columnWidthList[col],
+                                           self.titleHeight,
+                                           width=2,
+                                           tags=tag,
+                                           outline=self.WHITE_COLOR,
+                                           fill=self.TITLE_COLOR)
+            t_text = self.create_text(10 + self.x_list[col] + self.columnWidthList[col] / 2,
+                             self.titleHeight / 2,
+                             anchor=CENTER,
+                             text=self.titles[col])
+            self.titlesRect.append([t_rect, t_text])
+
+    def cleanData(self):
+        if self.tableRect:
+            for row in self.tableRect:
+                self.delete(row[0])
+                for col in row[1]:
+                    self.delete(col)
+        if self.TableLines:
+            for t_line in self.TableLines:
+                self.delete(t_line)
+        self.tableRect = []
+        self.TableLines = []
+        self.row = 0
+        self.tableData = []
+        self.select_row = -1
+        self.minScrollY = 0
+
+    def setData(self, data, titles, columnWidthList=[], command=None):
+        self.cleanData()
+
+        self.scrollY = 0
+        self.tableData = data
+        self.row = len(data)
+        self.column = len(titles)
+        self.titleCommand = command
+        self.titles = titles
+
+        self.resetColumnSize(columnWidthList)
+        if not data:
+            return
+        if len(data[0]) != len(titles):
+            return
+
+        h = self.winfo_height()
+        if h != 1:
+            self.height = h
+            self.minScrollY = h - self.row * self.rowHeight - 2
+        else:
+            self.minScrollY = None
+
+        # TODO
+        self.draw()
+
+        self.refreshTitle(titles)
+
+    def addData(self, add_data):
+        if not add_data:
+            return
+        if len(add_data[0]) != self.column:
+            raise
+        self.tableData += add_data
+        if self.TableLines:
+            for t_line in self.TableLines:
+                self.delete(t_line)
+
+        self.row += len(add_data)
+        self.draw()
+
+        for col in range(1, self.column):
+            self.TableLines.append(self.create_line((1 + self.x_list[col],
+                                                     self.scrollY + self.titleHeight,
+                                                     1 + self.x_list[col],
+                                                     self.scrollY + self.titleHeight + self.row * self.rowHeight)))
+
+        self.refreshTitle()
+
+        h = self.winfo_height()
+        if h != 1:
+            self.minScrollY = h - self.row * self.rowHeight - 2
+        else:
+            self.minScrollY = None
+
+    def setDoubleButtonCallback(self, command):
+        if callable(command):
+            self.tableCommand = command
+
+    def mouseWheel(self, event):
+        if self.minScrollY == None:
+            h = self.winfo_height()
+            if h != 1:
+                self.minScrollY = h - self.row * self.rowHeight - 2
+            else:
+                self.minScrollY = None
+                return
+        if self.minScrollY >= 0:
+            return
+        if event.num == 4:
+            direct = 20
+            if self.scrollY == 0:
+                return
+            elif self.scrollY + direct >= 0:
+                direct = -self.scrollY
+        elif event.num == 5:
+            direct = -20
+            if self.scrollY == self.minScrollY:
+                return
+            elif self.scrollY + direct <= self.minScrollY:
+                direct = self.minScrollY - self.scrollY
+        self.scrollY += direct
+
+        self.draw()
+        self.refreshTitle()
+        # for row in range(len(self.tableRect)):
+        #     t_rect = self.tableRect[row][0]
+        #     t_rowList = self.tableRect[row][1]
+        #     self.move(t_rect, 0, direct)
+        #     for col in range(self.column):
+        #         self.move(t_rowList[col], 0, direct)
+        pass
+
+    def onClick(self, event):
+        self.clickEvent(event)
+
+    def onDoubleClick(self, event):
+        self.clickEvent(event, 1)
+
+    def clickEvent(self, event, Mode=0):
+        if event.y < self.titleHeight:
+            n = 0
+            while event.x > self.x_list[n] + self.columnWidthList[n]:
+                n += 1
+            if callable(self.titleCommand):
+                self.titleCommand(n)
+            return
+
+        index = -1
+        n = 0
+        for i,t in enumerate(self.tableRect):
+            if t[3] > event.y - self.titleHeight:
+                index = n
+                break
+            n += 1
+        if index == -1:
+            return
+        # row = int((event.y - self.scrollY - self.titleHeight) / self.rowHeight)
+        if self.select_row != -1:
+            if self.select_row % 2 == 1:
+                bg = self.WHITE_COLOR
+            else:
+                bg = self.BLACK_COLOR
+            for t_col in range(self.column):
+                rt = self.tableRect[self.select_row][0]
+                self.itemconfigure(rt, fill=bg)
+        self.select_row = index
+
+        rt = self.tableRect[index][0]
+        self.itemconfigure(rt, fill=self.SELECT_COLOR)
+
+        if Mode and callable(self.tableCommand):
+            row = self.tableRect[index][4]
+            data = [row, self.tableData[row]]
+            self.tableCommand(data)
+
+class openFileDialog():
+    def printProtocol(self):
+        print('WM_DELETE_WINDOW')
+        self.openfileRoot.destroy()
+        mImgLoadQueueLock.release()
+
+    def __init__(self, master):
+        mImgLoadQueueLock.acquire()
+        self.REVERSE_FILE_TABLE = False
+        self.nowFileList = None
+        self.nowFilePath = None
+        self.openFile(master)
+        self.openfileRoot.protocol('WM_DELETE_WINDOW', self.printProtocol)
+
+    def onDoubleClickFileTable(self, data):
+        new_path = data[1][0]
+        if new_path == '..':
+            backUri()
+            return
+        if os.path.isdir(self.nowFilePath + new_path + '/'):
+            self.nowFilePath = self.nowFilePath + new_path + '/'
+            self.refreshFileListBox(self.nowFilePath)
+
+    def refreshFileListBox(self, Path):
+        self.nowFileList = self.getFileInfoList(Path)
+        self.openfileRoot.mountFrame.fileTable.setData(self.getFileListTable(self.nowFileList[0]), columnWidthList=[250, 100, 150], titles=['文件名', '大小', '修改日期'], command=self.reSortFileList)
+        self.openfileRoot.mountFrame.fileTable.addData(self.getFileListTable(self.nowFileList[1]))
+
+    def reSortFileList(self, num):
+        global REVERSE_FILE_TABLE
+        global nowFileList
+        if num == 0:
+            nowFileList[0].sort(key=lambda x: x.filename, reverse=REVERSE_FILE_TABLE)
+            nowFileList[1].sort(key=lambda x: x.filename, reverse=REVERSE_FILE_TABLE)
+        if num == 1:
+            nowFileList[1].sort(key=lambda x: x.size, reverse=REVERSE_FILE_TABLE)
+        if num == 2:
+            nowFileList[0].sort(key=lambda x: x.atime, reverse=REVERSE_FILE_TABLE)
+            nowFileList[1].sort(key=lambda x: x.atime, reverse=REVERSE_FILE_TABLE)
+        print('reSortFileList ',num)
+
+        self.openfileRoot.mountFrame.fileTable.cleanData()
+        if REVERSE_FILE_TABLE:
+            t = [0, 1]
+            REVERSE_FILE_TABLE = False
+        else:
+            t = [0, 1]
+            REVERSE_FILE_TABLE = True
+        for i in t:
+            self.openfileRoot.mountFrame.fileTable.addData(self.getFileListTable(nowFileList[i]))
+
+    def backUri(self):
+        t_mlist = self.nowFilePath.split('/')[:-2]
+        self.nowFilePath = '/'
+        for m in t_mlist:
+            if m != '':
+                self.nowFilePath += (m + '/')
+
+        self.refreshFileListBox(self.nowFilePath)
+
+    def changeMount(self, event):
+        t = self.openfileRoot.mountList.curselection()
+        now_mount = self.openfileRoot.mountList.get(t)
+        self.nowFilePath = '/media/' + USER_NAME + '/' + now_mount + '/'
+        self.refreshFileListBox(self.nowFilePath)
+
+    def changeFile(self, new_path):
+        if new_path == '..':
+            backUri()
+            return
+        self.nowFilePath = self.nowFilePath + new_path + '/'
+        self.refreshFileListBox(self.nowFilePath)
+
+    def getFileInfoList(self, path):
+        if not os.path.isdir(path):
+            raise
+        if not path.endswith('/'):
+            path += '/'
+        mlist = os.listdir(path)
+        pathList = []
+        fileList = []
+        for fn in mlist:
+            if os.path.isdir(path + fn):
+                pathList.append(fileInfo(path + fn))
+            else:
+                fileList.append(fileInfo(path + fn))
+        pathList.sort(key=lambda x: x.filename)
+        fileList.sort(key=lambda x: x.filename)
+        nowFileInfoList = [pathList, fileList]
+        return nowFileInfoList
+
+    def getFileListTable(self, nowFileInfoList):
+        # fileInfoTable = [['..', '', '']]
+        fileInfoTable = []
+        for fi in nowFileInfoList:
+            if len(fi.filename) > 27:
+                t_filename = fi.filename[:10] + '...' + fi.filename[-10:]
+            else:
+                t_filename = fi.filename
+
+            l = ['字节', 'KB', 'MB', 'GB']
+            t_size = fi.size
+            if t_size:
+                n = 0
+                while n < 3 and t_size / 1024.0 > 1:
+                    t_size /= 1024.0
+                    n += 1
+                t_size = ("%.1f"%(t_size)) + l[n]
+            else:
+                t_size = ''
+
+            t_tome = time.strftime("%Y年%2m月%2d日", time.localtime(fi.atime))
+            # print(t_filename)
+            #fileInfoString = "%-25s| %-10s| %-13s|" % (t_filename, t_size, t_tome)
+            # filenameList.append(t_filename)
+            # fileSizeList.append(t_size)
+            # fileATimeList.append(t_tome)
+            fileInfoTable.append([t_filename, t_size, t_tome])
+        # fileV.set(tuple(filenameList))
+        # sizeV.set(tuple(fileSizeList))
+        # atimeV.set(tuple(fileATimeList))
+        return fileInfoTable
+
+    def openFile(self, master):
+        # TODO
+        print('openFile')
+        self.openfileRoot = Toplevel(master)
+        self.openfileRoot.wm_attributes('-topmost',1)
+        t_screen_width, t_screen_height = root.maxsize()
+        self.openfileRoot.geometry("800x600+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
+
+        self.openfileRoot.uirFrame = Frame(self.openfileRoot)
+        # openfileRoot.uirFrame.place(in_=openfileRoot, x=10, y=10, relwidth=0.9, anchor=NW)
+        self.openfileRoot.uirFrame.pack(fill=X, expand=0, padx=5, pady=5)
+        self.openfileRoot.uirFrame.backButton = Button(self.openfileRoot.uirFrame, text="后退", relief=FLAT, command=self.backUri, height=1)
+        self.openfileRoot.uirFrame.backButton.pack(side=LEFT,padx=5)
+        self.uriV = StringVar()
+        self.openfileRoot.mUriEntry = Entry(self.openfileRoot.uirFrame, textvariable=self.uriV)
+        self.openfileRoot.mUriEntry.bind('<Return>', )
+        self.uriV.set(os.getcwd())
+        self.openfileRoot.mUriEntry.pack(side=RIGHT, fill=X, expand=1)
+
+        mountV = StringVar()
+        self.openfileRoot.mountList = Listbox(self.openfileRoot, listvariable=mountV, selectmode=SINGLE)
+        mList = os.listdir('/media/' + USER_NAME)
+        for m in mList:
+            self.openfileRoot.mountList.insert(END, m)
+        self.openfileRoot.mountList.bind('<Double-Button-1>', self.changeMount)
+        self.openfileRoot.m_scrollbar = Scrollbar(self.openfileRoot, orient=VERTICAL)
+        self.openfileRoot.mountList['yscrollcommand'] = self.openfileRoot.m_scrollbar.set
+        self.openfileRoot.m_scrollbar['command'] = self.openfileRoot.mountList.yview
+        self.openfileRoot.mountList.pack(fill=Y, expand=0, side=LEFT)
+        self.openfileRoot.m_scrollbar.pack(fill=Y, expand=0, side=LEFT)
+
+        self.openfileRoot.mountFrame = Frame(self.openfileRoot,bg='red')
+        self.openfileRoot.mountFrame.pack(fill=BOTH, expand=1, padx=5, pady=5, side=RIGHT)
+        self.openfileRoot.mountFrame.fileTable = myTable(self.openfileRoot.mountFrame)
+        self.openfileRoot.mountFrame.fileTable.pack(fill=BOTH, expand=1, side=LEFT)
+        self.openfileRoot.mountFrame.fileTable.setDoubleButtonCallback(self.onDoubleClickFileTable)
+        self.nowFilePath = os.getcwd()
+        self.refreshFileListBox(self.nowFilePath)
+
+def openFile(master, MODE):
+    openFileDialog(master)
+
+def rotateImg(MODE):
+    print(MODE)
+
+def mainUI(master):
+    global mTwoViewMode
+    master.menu = Menu(master)
+
+    master.menu.filemenu = Menu(master)
+    master.menu.filemenu.s_submenu = Menu(master)
+    master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
+    master.menu.filemenu.add_command(label="打开文件...", command=lambda: openFile(master, OPEN_FILE))
+    master.menu.filemenu.add_command(label="打开文件夹...", command=lambda: openFile(master, OPEN_URI))
+    master.menu.filemenu.add_command(label="管理收藏库...", command=openFile)
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_command(label="文件属性...", command=openFile)
+    master.menu.filemenu.add_command(label="密码管理...", command=openFile)
+    master.menu.filemenu.add_command(label="首选项...", command=openFile)
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_cascade(label='打开最近', menu=master.menu.filemenu.s_submenu)
+    master.menu.filemenu.s_submenu.add_command(label="清空最近")
+    master.menu.filemenu.s_submenu.add_separator()
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_command(label="退出", command=openFile)
+
+    master.menu.viewmenu = Menu(master)
+    master.menu.add_cascade(label='查看',menu=master.menu.viewmenu)
+    mTwoViewMode = IntVar()
+    master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=openFile)
+    master.menu.viewmenu.add_separator()
+    mViewMode = StringVar()
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=openFile)
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应宽度模式", command=openFile)
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应高度模式", command=openFile)
+    mViewMode.set('最佳适应模式')
+    master.menu.viewmenu.add_separator()
+    master.menu.viewmenu.add_command(label="顺时针旋转 90度", command=lambda: rotateImg(1))
+    master.menu.viewmenu.add_command(label="逆时针旋转 90度", command=lambda: rotateImg(2))
+    master.menu.viewmenu.add_command(label="旋转 180度", command=lambda: rotateImg(3))
+
+    master.menu.jumpmenu = Menu(master)
+    master.menu.add_cascade(label='跳转',menu=master.menu.jumpmenu)
+    master.menu.jumpmenu.add_command(label="文件跳转...", command=openFile)
+    master.menu.jumpmenu.add_command(label="文件随机跳转", command=openFile)
+    master.menu.jumpmenu.add_separator()
+    master.menu.jumpmenu.add_command(label="图片跳转...", command=openFile)
+    master.menu.jumpmenu.add_command(label="图片随机跳转", command=openFile)
+    master.menu.jumpmenu.add_separator()
+    master.menu.jumpmenu.add_command(label="下一页", command=openFile)
+    master.menu.jumpmenu.add_command(label="上一页", command=openFile)
+    master.menu.jumpmenu.add_command(label="下一文件包", command=openFile)
+    master.menu.jumpmenu.add_command(label="上一文件包", command=openFile)
+    master.menu.jumpmenu.add_separator()
+    mSlide = IntVar()
+    master.menu.jumpmenu.add_checkbutton(variable=mSlide, label="放映幻灯片",command=openFile)
+    mRandomSlide = IntVar()
+    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机播放模式", command=openFile)
+
+    master.menu.bookmarkmenu = Menu(master)
+    master.menu.add_cascade(label='书签',menu=master.menu.bookmarkmenu)
+    master.menu.bookmarkmenu.add_command(label="添加书签", command=openFile)
+    master.menu.bookmarkmenu.add_command(label="管理书签...", command=openFile)
+    master.menu.bookmarkmenu.add_separator()
+
+    master['menu'] = master.menu
 
 def slide():
     # print ("slide")
@@ -755,6 +1301,8 @@ def mouseEvent(ev):
             slideT.start()
 
 def onKeyPress(ev):
+    # TODO about和help
+    # TODO 重开文件
     global nTime
     nTime = time.time()
     global slideT
@@ -876,9 +1424,11 @@ if __name__ == '__main__':
         KEY_CODE = _KeyCode('Windows')
 
     root = tk.Tk()
-    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
+    t_screen_width, t_screen_height = root.maxsize()
+    root.geometry("800x600+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
+    mainUI(root)
     mWinChanged = False
     label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold')
     label.pack(padx=15, pady=15, expand=1, fill="both")
