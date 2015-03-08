@@ -111,6 +111,7 @@ class guardTh(threading.Thread):
         nTime = time.time()
 
         while TRUE:
+            time.sleep(0.08)
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
@@ -642,6 +643,7 @@ class loadImgTh(threading.Thread):
         global mImgLoadQueueLock
 
         while TRUE:
+            time.sleep(0.05)
             if not willLoadImgQueue:
                 continue
             if self.nowLoadImgInfo:
