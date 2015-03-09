@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # coding=utf-8
 
+from widget import *
 import io
 import urllib
 import json
@@ -21,20 +22,31 @@ from tkinter.simpledialog import *
 from tkinter.messagebox import *
 
 _NONE = ""
+
 BACK_IMG = 1
 NEXT_IMG = 2
 JUMP_IMG = 3
+
 SLIDE_TIME = 3
+
 USE_FILE_MD5 = False
+
+SUB_FILE_DEPTH = -1
+
 BACK_FILE = -1
 NEXT_FILE = 0
 CURRENT_FILE = 1
 NOCHANGE_FILE = 2
 JUMP_FILE = 3
+CHANGE_FILE = 4
+
 BAD_FILE = "bad_file"
+
 ANTIALIAS_SHOW_IMG = False
+
 CPS_CLASS = 0
 FILE_CLASS = 1
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -115,69 +127,99 @@ class guardTh(threading.Thread):
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
-                FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
-                if ChangeFileFlag["direct"] is JUMP_FILE:
-                    self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
-                ChangeFileFlag["direct"] = NOCHANGE_FILE
-                ChangeFileLock.release()
-                root.title("图片浏览器-Loading/%d" % len(FILE_LIST))
-                mImgLoadQueueLock.acquire()
-                if self.openFile(t_direct) is FILE_CLASS:
-                    t_file_class = FILE_CLASS
-                    self.imgList = self.getImageList(self.nowFileInfo.File, isfile=True)
+                if not FILE_LIST:
+                    self.nowFileInfo.FilePos = -1
+                    ChangeFileFlag["direct"] = NOCHANGE_FILE
+                    ChangeFileLock.release()
+                    root.title("图片浏览器- No File")
+                    mImgLoadQueueLock.acquire()
+                    self.imgList = []
+                    self.nowShowImgPos = 0
+                    self.nowFileInfo.Filename = None
+                    changeImgLock.acquire()
+                    mImgPos = 0
+                    changeImgLock.release()
+                    self.imgCache = [_NONE for i in range(len(self.imgList))]
+                    self.imgNum = 0
+                    self.nextLoadImgPos = 0
+                    self.shouldLoadImg = False
+                    self.shouldRefreshImg = False
+                    willLoadImgQueue = {
+                        "CPS_FILE": None,
+                        "fileClass": None,
+                        "nowFilePos": 0,
+                        "imgCache": self.imgCache,
+                        "willLoadImgQueue": []
+                        }
+                    mImgLoadQueueLock.release()
                 else:
-                    t_file_class = CPS_CLASS
-                    self.imgList = self.getImageList(self.nowFileInfo.File)
-                self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
+                    if not t_direct is CHANGE_FILE:
+                        FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
+                    if t_direct is JUMP_FILE:
+                        if self.nowFileInfo.FilePos == ChangeFileFlag["nowFilePos"]:
+                            continue
+                        self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
+                    ChangeFileFlag["direct"] = NOCHANGE_FILE
+                    ChangeFileLock.release()
+                    root.title("图片浏览器-Loading/%d" % len(FILE_LIST))
+                    mImgLoadQueueLock.acquire()
+                    if self.openFile(t_direct) is FILE_CLASS:
+                        t_file_class = FILE_CLASS
+                        self.imgList = self.getImageList(self.nowFileInfo.File, isfile=True)
+                    else:
+                        t_file_class = CPS_CLASS
+                        self.imgList = self.getImageList(self.nowFileInfo.File)
+                    self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
 
-                # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
-                # print("Load File Time: " + str(time.time() - st1))
-                self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
-                try:
-                    self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("cp437").decode("gbk")
-                except:
-                    pass
-                    # self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("utf-8").decode("utf-8")
-                changeImgLock.acquire()
-                mImgPos = self.nowShowImgPos
-                changeImgLock.release()
-                self.imgCache = [_NONE for i in range(len(self.imgList))]
-                self.imgNum = len(self.imgList)
-                self.nextLoadImgPos = self.nowShowImgPos
-                self.shouldLoadImg = TRUE
-                self.shouldRefreshImg = TRUE
-                willLoadImgQueue = {
-                    "CPS_FILE": self.nowFileInfo.File,
-                    "fileClass": t_file_class,
-                    "nowFilePos": self.nowFileInfo.FilePos,
-                    "imgCache": self.imgCache,
-                    "willLoadImgQueue": []
-                    }
-                self.addQueue(self.nowShowImgPos)
-                mImgLoadQueueLock.release()
+                    # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
+                    # print("Load File Time: " + str(time.time() - st1))
+                    self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
+                    try:
+                        self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("cp437").decode("gbk")
+                    except:
+                        pass
+                        # self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("utf-8").decode("utf-8")
+                    changeImgLock.acquire()
+                    mImgPos = self.nowShowImgPos
+                    changeImgLock.release()
+                    self.imgCache = [_NONE for i in range(len(self.imgList))]
+                    self.imgNum = len(self.imgList)
+                    self.nextLoadImgPos = self.nowShowImgPos
+                    self.shouldLoadImg = TRUE
+                    self.shouldRefreshImg = TRUE
+                    willLoadImgQueue = {
+                        "CPS_FILE": self.nowFileInfo.File,
+                        "fileClass": t_file_class,
+                        "nowFilePos": self.nowFileInfo.FilePos,
+                        "imgCache": self.imgCache,
+                        "willLoadImgQueue": []
+                        }
+                    self.addQueue(self.nowShowImgPos)
+                    mImgLoadQueueLock.release()
             else:
                 ChangeFileLock.release()
-                changeImgLock.acquire()
-                if RandomLoadImgFlag:
-                    mImgLoadQueueLock.acquire()
-                    random.shuffle(self.imgList)
-                    mImgPos = 0
-                    self.nowShowImgPos = mImgPos
-                    self.shouldRefreshImg = TRUE
-                    RandomLoadImgFlag = False
-                    self.imgCache = [_NONE for i in range(len(self.imgList))]
-                    willLoadImgQueue["imgCache"] = self.imgCache
-                    self.addQueue(self.nowShowImgPos)
-                    mImgLoadQueueLock.release()
-                elif self.nowShowImgPos != mImgPos:
-                    mImgPos %= len(self.imgList)
-                    self.nowShowImgPos = mImgPos
-                    self.shouldRefreshImg = TRUE
+                if self.imgList:
+                    changeImgLock.acquire()
+                    if RandomLoadImgFlag:
+                        mImgLoadQueueLock.acquire()
+                        random.shuffle(self.imgList)
+                        mImgPos = 0
+                        self.nowShowImgPos = mImgPos
+                        self.shouldRefreshImg = TRUE
+                        RandomLoadImgFlag = False
+                        self.imgCache = [_NONE for i in range(len(self.imgList))]
+                        willLoadImgQueue["imgCache"] = self.imgCache
+                        self.addQueue(self.nowShowImgPos)
+                        mImgLoadQueueLock.release()
+                    elif self.nowShowImgPos != mImgPos:
+                        mImgPos %= len(self.imgList)
+                        self.nowShowImgPos = mImgPos
+                        self.shouldRefreshImg = TRUE
 
-                    mImgLoadQueueLock.acquire()
-                    self.addQueue(self.nowShowImgPos)
-                    mImgLoadQueueLock.release()
-                changeImgLock.release()
+                        mImgLoadQueueLock.acquire()
+                        self.addQueue(self.nowShowImgPos)
+                        mImgLoadQueueLock.release()
+                    changeImgLock.release()
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 # print("Change Img Time: %f " % (time.time() - nTime))
@@ -814,6 +856,120 @@ class loadImgTh(threading.Thread):
                     break
             mImgLoadQueueLock.release()
 
+
+def fileDialog(master, MODE):
+    openFileDialog(master, command=changeFileFromDialog)
+
+def rotateImg(MODE):
+    print(MODE)
+
+def changeFileFromDialog(path):
+    global FILE_LIST
+    global label
+    global ChangeFileFlag
+    label.configure(image="")
+    label['text'] = "Loading"
+
+    if len(sys.argv) < 2:
+        fd = FileDialog(root, title="要打开的文件")
+        MAIN_FILE_URI = fd.go()
+        if MAIN_FILE_URI == _NONE:
+            print("URI is wrong")
+            exit()
+        t_file_uri = MAIN_FILE_URI
+    else:
+        MAIN_FILE_URI = _NONE
+        for uri in sys.argv[1:]:
+            MAIN_FILE_URI += (uri + " ")
+        MAIN_FILE_URI = MAIN_FILE_URI[:-1]
+        t_file_uri = MAIN_FILE_URI
+
+    MAIN_FILE_URI = path
+    t_file_name = _NONE
+    if os.path.isfile(MAIN_FILE_URI):
+        t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
+        MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
+
+
+    t_file_list = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+
+    try:
+        t_nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE})
+    except:
+        t_nowFilePos = 0
+
+    ChangeFileLock.acquire()
+    FILE_LIST = t_file_list
+    ChangeFileFlag["direct"] = CHANGE_FILE
+    ChangeFileFlag["nowFilePos"] = t_nowFilePos
+    ChangeFileLock.release()
+
+    if not t_file_list:
+        showwarning(title="对不起", message="该文件夹下没有可用文件")
+        label['text'] = "No File"
+
+def mainUI(master):
+    global mTwoViewMode
+    master.menu = Menu(master)
+
+    master.menu.filemenu = Menu(master)
+    master.menu.filemenu.s_submenu = Menu(master)
+    master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
+    master.menu.filemenu.add_command(label="打开文件...", command=lambda: fileDialog(master, OPEN_FILE))
+    master.menu.filemenu.add_command(label="打开文件夹...", command=lambda: fileDialog(master, OPEN_URI))
+    master.menu.filemenu.add_command(label="管理收藏库...", command=fileDialog)
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_command(label="文件属性...", command=fileDialog)
+    master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
+    master.menu.filemenu.add_command(label="首选项...", command=fileDialog)
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_cascade(label='打开最近', menu=master.menu.filemenu.s_submenu)
+    master.menu.filemenu.s_submenu.add_command(label="清空最近")
+    master.menu.filemenu.s_submenu.add_separator()
+    master.menu.filemenu.add_separator()
+    master.menu.filemenu.add_command(label="退出", command=fileDialog)
+
+    master.menu.viewmenu = Menu(master)
+    master.menu.add_cascade(label='查看',menu=master.menu.viewmenu)
+    mTwoViewMode = IntVar()
+    master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=fileDialog)
+    master.menu.viewmenu.add_separator()
+    mViewMode = StringVar()
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=fileDialog)
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应宽度模式", command=fileDialog)
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应高度模式", command=fileDialog)
+    mViewMode.set('最佳适应模式')
+    master.menu.viewmenu.add_separator()
+    master.menu.viewmenu.add_command(label="顺时针旋转 90度", command=lambda: rotateImg(1))
+    master.menu.viewmenu.add_command(label="逆时针旋转 90度", command=lambda: rotateImg(2))
+    master.menu.viewmenu.add_command(label="旋转 180度", command=lambda: rotateImg(3))
+
+    master.menu.jumpmenu = Menu(master)
+    master.menu.add_cascade(label='跳转',menu=master.menu.jumpmenu)
+    master.menu.jumpmenu.add_command(label="文件跳转...", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="文件随机跳转", command=fileDialog)
+    master.menu.jumpmenu.add_separator()
+    master.menu.jumpmenu.add_command(label="图片跳转...", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="图片随机跳转", command=fileDialog)
+    master.menu.jumpmenu.add_separator()
+    master.menu.jumpmenu.add_command(label="下一页", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="上一页", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="下一文件包", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="上一文件包", command=fileDialog)
+    master.menu.jumpmenu.add_separator()
+    mSlide = IntVar()
+    master.menu.jumpmenu.add_checkbutton(variable=mSlide, label="放映幻灯片",command=fileDialog)
+    mRandomSlide = IntVar()
+    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机播放模式", command=fileDialog)
+
+    master.menu.bookmarkmenu = Menu(master)
+    master.menu.add_cascade(label='书签',menu=master.menu.bookmarkmenu)
+    master.menu.bookmarkmenu.add_command(label="添加书签", command=fileDialog)
+    master.menu.bookmarkmenu.add_command(label="管理书签...", command=fileDialog)
+    master.menu.bookmarkmenu.add_separator()
+
+    master['menu'] = master.menu
+
 def slide():
     # print ("slide")
     global slideLock
@@ -980,7 +1136,13 @@ def onKeyPress(ev):
         with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
             f.write(t_pwd_json)
 
-def getFileList(file_uri, subfile=False):
+def getFileList(file_uri, subfile=False, depth=0):
+    if subfile:
+        if SUB_FILE_DEPTH > 0 and depth > SUB_FILE_DEPTH:
+            return []
+    elif depth > 1:
+        return []
+    depth += 1
     t_file_list = []
     if not file_uri.endswith(FILE_SIGN):
         file_uri += FILE_SIGN
@@ -991,8 +1153,8 @@ def getFileList(file_uri, subfile=False):
             t_file_list.append({"filename": sub_file_name, "fileUri": file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE, "CurrentPos": 0})
         elif sub_file_name[-3:].lower() == 'jpg' or sub_file_name[-3:].lower() == 'png' or sub_file_name[-3:].lower() == 'gif':
             has_pic = True
-        elif subfile and os.path.isdir(file_uri + sub_file_name):
-            t_file_list += getFileList(file_uri + sub_file_name, subfile=True)
+        elif os.path.isdir(file_uri + sub_file_name):
+            t_file_list += getFileList(file_uri + sub_file_name, subfile=subfile, depth=depth)
     if has_pic:
         t_file_list.append({"filename": file_uri.split(FILE_SIGN)[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
     return t_file_list
@@ -1010,30 +1172,38 @@ if __name__ == '__main__':
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
+    mainUI(root)
     mWinChanged = False
     label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold')
     label.pack(padx=15, pady=15, expand=1, fill="both")
 
-    if len(sys.argv) < 2:
-        fd = FileDialog(root, title="要打开的文件")
-        MAIN_FILE_URI = fd.go()
-        if MAIN_FILE_URI == _NONE:
-            print("URI is wrong")
-            exit()
-        t_file_uri = MAIN_FILE_URI
-    else:
+    mImgPos = 0
+    FILE_LIST = []
+    ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE}
+    RandomLoadImgFlag = False
+    willLoadImgQueue = _NONE
+
+    guardTask = guardTh()
+
+    if not len(sys.argv) < 2:
         MAIN_FILE_URI = _NONE
         for uri in sys.argv[1:]:
             MAIN_FILE_URI += (uri + " ")
         MAIN_FILE_URI = MAIN_FILE_URI[:-1]
         t_file_uri = MAIN_FILE_URI
 
-    t_file_name = _NONE
-    if os.path.isfile(MAIN_FILE_URI):
-        t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
-        MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
+        t_file_name = _NONE
+        if os.path.isfile(MAIN_FILE_URI):
+            t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
+            MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
 
-    FILE_LIST = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+        FILE_LIST = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+        ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
+
+        try:
+            guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
+        except:
+            guardTask.nowFilePos = 0
 
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
@@ -1066,15 +1236,6 @@ if __name__ == '__main__':
             with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
                 f.write(t_pwd_json)
 
-    ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
-    RandomLoadImgFlag = False
-    willLoadImgQueue = _NONE
-
-    guardTask = guardTh()
-    try:
-        guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
-    except:
-        guardTask.nowFilePos = 0
     guardTask.setDaemon(TRUE)
     loadTask = loadImgTh()
     loadTask.setDaemon(TRUE)
