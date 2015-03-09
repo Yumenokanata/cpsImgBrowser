@@ -132,7 +132,12 @@ class guardTh(threading.Thread):
 
                 # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                 # print("Load File Time: " + str(time.time() - st1))
-                self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"].encode("utf-8").decode("utf-8")
+                self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
+                try:
+                    self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("cp437").decode("gbk")
+                except:
+                    pass
+                    # self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("utf-8").decode("utf-8")
                 changeImgLock.acquire()
                 mImgPos = self.nowShowImgPos
                 changeImgLock.release()
@@ -180,8 +185,8 @@ class guardTh(threading.Thread):
                 st = time.time()
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
-                imgName = imgName.replace("/", "\\")
-                imgName = imgName.split('\\')[-1]
+                imgName = imgName.replace("\\", "/")
+                # imgName = imgName.split('/')[-1]
                 try:
                     imgName = imgName.encode('cp437')
                     imgName = imgName.decode("gbk")
@@ -307,9 +312,36 @@ class guardTh(threading.Thread):
                           or info.filename[-3:].lower() == 'png'
                           or info.filename[-3:].lower() == 'gif')]
         # st4 = time.time()
-        self.sortFileName(t_img_list)
+        # t_test_list = ['aaa']
+        divide_list = self.divideByFile(t_img_list, key=lambda x: x.filename)
+        divide_list.sort(key=lambda x: x[0])
+        t_img_list = []
+        for t_l in divide_list:
+            t_img_list += self.sortFileName(t_l[1], key=lambda x: x.filename)
         # print("Sort Time: %f / %d" % (time.time() - st4, len(t_img_list)))
         return t_img_list
+
+    def divideByFile(self, t_list, key=lambda x: x):
+        if not callable(key):
+            return []
+        uri_list = []
+        files_dict = {' ':[]}
+        for t_l in t_list:
+            value = key(t_l)
+            value = value.replace("\\", "/")
+            uri = value.replace(value.split('/')[-1], '')
+            if not uri:
+                files_dict[' '].append(t_l)
+            elif uri in uri_list:
+                files_dict[uri].append(t_l)
+            else:
+                uri_list.append(uri)
+                files_dict[uri] = [t_l]
+
+        r_list = []
+        for d in files_dict.items():
+            r_list.append([d[0], d[1]])
+        return r_list
 
     def printList(self, t_list):
         str1 = ""
@@ -317,24 +349,122 @@ class guardTh(threading.Thread):
             str1 = str1 + str(n) + ","
         print(str1)
 
-    def sortFileName(self, t_list):
-        self.quickSort(t_list, 0, len(t_list) - 1)
+    def getEditDistance(self, a, b):
+        len_a = len(a)
+        len_b = len(b)
+        d = [[0 for i in range(len_b)] for j in range(len_a)]
+        for i in range(len_a):
+            d[i][0] = i
+        for j in range(len_b):
+            d[0][j] = j
 
-    def quickSort(self, t_list, left, right):
+        for i in range(1, len_a):
+            for j in range(1, len_b):
+                if a[i] == b[j]:
+                    d[i][j] = d[i - 1][j - 1]
+                else:
+                    d[i][j] = min( d[i - 1][j - 1] + 1,
+                                   d[i - 1][j] + 1,
+                                   d[i][j - 1] + 1)
+        return d[len_a - 1][len_b - 1]
+
+    def sortStringBySimilarity2(self, t_list, key=lambda x:x):
+        if not callable(key):
+            return []
+        if not t_list:
+            return []
+        minString = key(t_list[0])
+        minIndex = 0
+        for i,l in enumerate(t_list):
+            value = key(l)
+            if value < minString:
+                minString = value
+                minIndex = i
+        self.swap(t_list, 0, minIndex)
+
+        l_len = len(t_list)
+        for i in range(l_len - 1):
+            minValue = key(t_list[i])
+            minDistance = len(minValue)
+            minIndex = i
+            for j in range(i + 1, l_len):
+                d = self.getEditDistance(minValue, key(t_list[j]))
+                if d < minDistance:
+                    d = minDistance
+                    minIndex = j
+            self.swap(t_list, i, minIndex)
+        return t_list
+
+    def sortStringBySimilarity(self, t_list, key=lambda x:x):
+        print('self.n', self.n)
+        self.n += 1
+        if not callable(key):
+            return []
+        if (not t_list) or len(t_list) == 1:
+            return t_list
+        elif len(t_list) == 2:
+            if key(t_list[0]) < key(t_list[1]):
+                return [t_list[1], t_list[0]]
+            else:
+                return t_list
+        minString = key(t_list[0])
+        maxLen = 0
+        for l in t_list:
+            value = key(l)
+            if value < minString:
+                minString = value
+            t_len = len(value)
+            if maxLen < t_len:
+                maxLen = t_len
+
+        d_dict = {}.fromkeys(range(maxLen))
+        for l in t_list:
+            d = self.getEditDistance(minString, key(l))
+            if d_dict[d]:
+                d_dict[d].append(l)
+            else:
+                d_dict[d] = [l]
+
+        # sorted(d_dict.items(), key=lambda x: x[0])
+        sorted_list = []
+        for t_d in d_dict.items():
+            if not t_d[1]:
+                continue
+
+            t_d_len = len(t_d[1])
+            if t_d_len == 1:
+                sorted_list.append(t_d[1][0])
+            elif t_d_len < 4:
+                t_d_list = t_d[1]
+                self.quickSort(t_d_list, 0, len(t_d_list) - 1, key=key)
+                sorted_list += t_d_list
+            else:
+                sorted_list += self.sortStringBySimilarity(t_d[1], key)
+                # t_d[1].sort(key=key)
+                # sorted_list += t_d[1]
+        return sorted_list
+
+    def sortFileName(self, t_list, key=lambda x: x.filename):
+        # self.n = 0
+        # return self.sortStringBySimilarity(t_list, key)
+        self.quickSort(t_list, 0, len(t_list) - 1, key=key)
+        return t_list
+
+    def quickSort(self, t_list, left, right, key=lambda x: x):
         if left < right:
             pivot = int((right + left) / 2)
-            pivot = self.partition(t_list, left, right, pivot)
-            self.quickSort(t_list, left, pivot - 1)
-            self.quickSort(t_list, pivot + 1, right)
+            pivot = self.partition(t_list, left, right, pivot, key=key)
+            self.quickSort(t_list, left, pivot - 1, key=key)
+            self.quickSort(t_list, pivot + 1, right, key=key)
 
-    def partition(self, t_list, left, right, pivot):
+    def partition(self, t_list, left, right, pivot, key=lambda x: x):
         # print("partition:  left: %d right: %d pivot: %d" % (left, right, pivot))
-        pivot_value = t_list[pivot].filename
+        pivot_value = key(t_list[pivot])
         self.swap(t_list, pivot, right)
         pivot = left
 
         for i in range(left, right):
-            if self.cmpString(pivot_value, t_list[i].filename):
+            if self.cmpString(pivot_value, key(t_list[i])):
                 self.swap(t_list, i, pivot)
                 pivot += 1
         self.swap(t_list, pivot, right)
@@ -342,7 +472,6 @@ class guardTh(threading.Thread):
 
     def cmpString(self, s1, s2):
         # Return one bigger than two
-        # TODO File sort
         if s1.count(FILE_SIGN) != s1.count(FILE_SIGN):
             return s1.count(FILE_SIGN) > s1.count(FILE_SIGN)
         if s1.count(FILE_SIGN) > 0:
@@ -585,8 +714,8 @@ class guardTh(threading.Thread):
                     for p in pwd_default:
                         try:
                             t_cps_file.setpassword(p)
-                            t_cps_file.open(t_cps_file.infolist()[0])
-                            #t_cps_file.testrar()
+                            # t_cps_file.open(t_cps_file.infolist()[0])
+                            t_cps_file.testrar()
                             has_pwd = True
                             pwd = p
                             PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
