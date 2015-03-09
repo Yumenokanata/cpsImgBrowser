@@ -4,6 +4,7 @@ from tkinter import ttk
 import os
 import getpass
 import time
+from cpsImgBrowser import _configData
 
 OPEN_FILE = 1
 OPEN_URI = 0
@@ -144,8 +145,28 @@ class myTable(Canvas):
             self.TableLines.append(self.create_line((1 + self.x_list[col], self.titleHeight, 1 + self.x_list[col], self.titleHeight + self.row * self.rowHeight)))
 
     def longStringToShort(self, String):
-        if len(String.encode('gbk')) > 40:
-            return String[:18] + '...' + String[-18:]
+        try:
+            t_len = len(String.encode('gbk'))
+            # mode = 'gbk'
+        except:
+            t_len = len(String.encode('utf8'))
+            # mode = 'utf8'
+        if t_len > 47:
+            # sum_len = 0
+            # cut_first = 0
+            # for i,s in enumerate(String):
+            #     sum_len += len(s.encode(mode))
+            #     if sum_len > 18:
+            #         cut_first = i
+            # sum_len = 0
+            # cut_last = 0
+            # for i in range(1, len(String)):
+            #     s = String[-i]
+            #     sum_len += len(s.encode(mode))
+            #     if sum_len > 18:
+            #         cut_last = i
+            cut_len = int(18 / t_len * len(String))
+            return String[:cut_len] + '...' + String[-cut_len:]
         else:
             return String
     def resetColumnSize(self, columnWidthList):
@@ -380,6 +401,7 @@ class openFileDialog():
             self.nowFilePath = os.getcwd() + '/'
         self.openFile(master)
         self.command = command
+        self.openfileRoot.mainloop()
 
     def onDoubleClickFileTable(self, data):
         new_path = data[1][0]
@@ -587,3 +609,43 @@ class openFileDialog():
         self.uriV.set(self.nowFilePath)
         self.refreshFileListBox(self.nowFilePath)
 
+class configDialog():
+    def __init__(self, master, command=None, oldConfig=None):
+        self.configData = oldConfig
+        ft = Font(family='Fixdsys', size=10)
+        self.configRoot = Toplevel(master)
+        self.configRoot.wm_attributes('-topmost',1)
+        t_screen_width, t_screen_height = master.maxsize()
+        self.configRoot.geometry("800x600+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
+
+        self.configRoot.backgroundFrame = LabelFrame(self.configRoot, text='背景', font=ft)
+        self.configRoot.backgroundFrame.place(x=0, y=0, width=400, height=400, anchor=NW)
+        self.backIntV = IntVar()
+        if self.configData.background == 'lightgrey':
+            self.backIntV.set(0)
+        elif self.configData.background == 'black':
+            self.backIntV.set(1)
+        else:
+            self.backIntV.set(2)
+        self.backIntV.set(2)
+        self.configRoot.backgroundFrame.lightRadioButton = Radiobutton(self.configRoot.backgroundFrame,
+                                                                       text='使用灰色背景',
+                                                                       font=ft,
+                                                                       variable=self.backIntV,
+                                                                       value=0)
+        self.configRoot.backgroundFrame.lightRadioButton.grid(columnspan=2, sticky=NW)
+        self.configRoot.backgroundFrame.blackRadioButton = Radiobutton(self.configRoot.backgroundFrame,
+                                                                       text='使用黑色背景',
+                                                                       font=ft,
+                                                                       variable=self.backIntV,
+                                                                       value=1)
+        self.configRoot.backgroundFrame.blackRadioButton.grid(row=1, columnspan=2, sticky=NW)
+        self.configRoot.backgroundFrame.customRadioButton = Radiobutton(self.configRoot.backgroundFrame,
+                                                                       text='使用自定义颜色',
+                                                                       font=ft,
+                                                                       variable=self.backIntV,
+                                                                       value=2)
+        self.configRoot.backgroundFrame.customRadioButton.grid(row=2, columnspan=2, sticky=NW)
+
+        self.backIntV.set(2)
+        self.configRoot.mainloop()

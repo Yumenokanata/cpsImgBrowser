@@ -93,6 +93,62 @@ class _KeyCode():
             self.codeP = 80
             self.codeM = 77
 
+
+class _configData():
+    def __init__(self, background='lightgrey',
+                 restore=True,
+                 restoreData={'filename':'',
+                              'uri':''},
+                 saveLatelyFileInfo=True,
+                 latelyFileInfo=[],
+                 scanSubFile=True,
+                 scanSubFileDepth=-1,
+                 defaultPassword=[],
+                 useCache=True,
+                 slideTime=3,
+                 saveFilePassword=True,
+                 useCustomSort=True):
+        self.background = background
+        self.restore = restore
+        self.restoreData = restoreData
+        self.saveLatelyFileInfo = saveLatelyFileInfo
+        self.latelyFileInfo = latelyFileInfo
+        self.scanSubFile = scanSubFile
+        self.scanSubFileDepth = scanSubFileDepth
+        self.defaultPassword = defaultPassword
+        self.useCache = useCache
+        self.slideTime = slideTime
+        self.saveFilePassword = saveFilePassword
+        self.useCustomSort = useCustomSort
+
+    def getDataDict(self):
+        return {'background': self.background,
+                'restore': self.restore,
+                'restoreData': self.restoreData,
+                'saveLatelyFileInfo': self.saveLatelyFileInfo,
+                'latelyFileInfo': self.latelyFileInfo,
+                'scanSubFile': self.scanSubFile,
+                'scanSubFileDepth': self.scanSubFileDepth,
+                'defaultPassword': self.defaultPassword,
+                'useCache': self.useCache,
+                'slideTime': self.slideTime,
+                'saveFilePassword': self.saveFilePassword,
+                'useCustomSort': self.useCustomSort}
+
+    def setDataFromDict(self, dict):
+        self.background = dict['background']
+        self.restore = dict['restore']
+        self.restoreData = dict['restoreData']
+        self.saveLatelyFileInfo = dict['saveLatelyFileInfo']
+        self.latelyFileInfo = dict['latelyFileInfo']
+        self.scanSubFile = dict['scanSubFile']
+        self.scanSubFileDepth = dict['scanSubFileDepth']
+        self.defaultPassword = dict['defaultPassword']
+        self.useCache = dict['useCache']
+        self.slideTime = dict['slideTime']
+        self.saveFilePassword = dict['saveFilePassword']
+        self.useCustomSort = dict['useCustomSort']
+
 class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
             self.filename = filename
@@ -628,6 +684,7 @@ class guardTh(threading.Thread):
     def openZipFile(self, _file_pos):
         global FILE_LIST
         global PWD_JSON
+        global mConfigData
 
         _filename = FILE_LIST[_file_pos]["filename"]
         _file_uri = FILE_LIST[_file_pos]["fileUri"]
@@ -672,7 +729,7 @@ class guardTh(threading.Thread):
             except:
                 has_pwd = False
                 try:
-                    pwd_default = PWD_JSON["defaultPassword"]
+                    pwd_default = mConfigData.defaultPassword
                 except:
                     pwd_default = []
                 if pwd_default:
@@ -713,6 +770,7 @@ class guardTh(threading.Thread):
     def openRarFile(self, _file_pos):
         global FILE_LIST
         global PWD_JSON
+        global mConfigData
 
         _filename = FILE_LIST[_file_pos]["filename"]
         _file_uri = FILE_LIST[_file_pos]["fileUri"]
@@ -756,7 +814,7 @@ class guardTh(threading.Thread):
             except:
                 has_pwd = False
                 try:
-                    pwd_default = PWD_JSON["defaultPassword"]
+                    pwd_default = mConfigData.defaultPassword
                 except:
                     pwd_default = []
                 if pwd_default:
@@ -886,6 +944,7 @@ def changeFileFromDialog(path):
     global label
     global ChangeFileFlag
     global nowFilePath
+    global mConfigData
     label.configure(image="")
     label['text'] = "Loading"
 
@@ -896,7 +955,7 @@ def changeFileFromDialog(path):
         t_file_name = nowFilePath.split(FILE_SIGN)[-1]
         nowFilePath = nowFilePath.replace(t_file_name, "")
 
-    t_file_list = getFileList(nowFilePath, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+    t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
 
     try:
         t_nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE})
@@ -1015,10 +1074,31 @@ def initMessage(master):
     InfoMessage = [ImgNameVar, ImgNumVar, FileNumVar, FileNameVar]
 
 def config():
-    configDialog(root, command=setConfig)
+    global mConfigData
+    configDialog(root, command=setConfig, oldConfig=mConfigData)
 
 def setConfig(data):
-    pass
+    global mConfigData
+    mConfigData = data
+    saveConfigToFile(mConfigData)
+
+def getConfigFromFile():
+    t_config = _configData()
+    try:
+        with open('.' + FILE_SIGN + 'conf.json', 'r') as f:
+            confJson = f.read()
+        CONF_JSON = json.JSONDecoder().decode(confJson)
+        t_config.setDataFromDict(CONF_JSON)
+    except:
+        t_conf_json = json.dumps(t_config.getDataDict())
+        with open('.' + FILE_SIGN + 'conf.json', 'w') as f:
+            f.write(t_conf_json)
+    return t_config
+
+def saveConfigToFile(config_data):
+    t_conf_json = json.dumps(config_data.getDataDict())
+    with open('.' + FILE_SIGN + 'conf.json', 'w') as f:
+        f.write(t_conf_json)
 
 def slide():
     # print ("slide")
@@ -1176,9 +1256,9 @@ def onKeyPress(ev):
             if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
                 ANTIALIAS_SHOW_IMG = True
     elif ev.keycode == KEY_CODE.codeM:
-        if PWD_JSON["defaultPassword"]:
-            dpw = PWD_JSON["defaultPassword"][0]
-            for pw in PWD_JSON["defaultPassword"][1:]:
+        if mConfigData.defaultPassword:
+            dpw = mConfigData.defaultPassword[0]
+            for pw in mConfigData.defaultPassword[1:]:
                 dpw = dpw + ";" + pw
         add_password = askstring(title='默认密码', prompt="请输入欲添加的可待测试默认密码: \n  1.以\";\"分隔多个\n  2.多余的空格也会被视为密码", initialvalue=dpw)
         try:
@@ -1187,12 +1267,10 @@ def onKeyPress(ev):
             return
         for ap in add_password:
             try:
-                PWD_JSON["defaultPassword"].index(ap)
+                mConfigData.defaultPassword.index(ap)
             except:
-                PWD_JSON["defaultPassword"].append(ap)
-        t_pwd_json = json.dumps(PWD_JSON)
-        with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
-            f.write(t_pwd_json)
+                mConfigData.defaultPassword.append(ap)
+        saveConfigToFile(mConfigData)
 
 def getFileList(file_uri, subfile=False, depth=0):
     if subfile:
@@ -1226,20 +1304,25 @@ if __name__ == '__main__':
         FILE_SIGN = "\\"
         KEY_CODE = _KeyCode('Windows')
 
+    mConfigData = getConfigFromFile()
+
     root = tk.Tk()
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
     root.title('图包浏览器')
     initMenu(root)
+    root.mainFrame = Frame(root, bg=mConfigData.background)
+    root.mainFrame.pack(fill=BOTH, expand=1)
     # label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold', bg='red')
-    root.imgFrame = Frame(root)
-    root.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, anchor=CENTER)
-    label = tk.Label(root.imgFrame, image=_NONE, font='Helvetica -18 bold')
+    root.mainFrame.imgFrame = Frame(root.mainFrame, bg=mConfigData.background)
+    root.mainFrame.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, anchor=CENTER)
+    label = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
     label.pack(expand=1, fill=BOTH)
     # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
-    initMessage(root)
+    initMessage(root.mainFrame)
 
+    SUB_FILE_DEPTH = mConfigData.scanSubFileDepth
     nowFilePath = os.getcwd() + '/'
     mImgPos = 0
     FILE_LIST = []
@@ -1261,7 +1344,7 @@ if __name__ == '__main__':
             t_file_name = nowFilePath.split(FILE_SIGN)[-1]
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
-        FILE_LIST = getFileList(nowFilePath, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+        FILE_LIST = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
         ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
 
         try:
