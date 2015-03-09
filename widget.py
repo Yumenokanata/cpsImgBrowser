@@ -491,6 +491,7 @@ class openFileDialog():
         # self.filterMenuIsClicked = True
 
     def clickOK(self):
+        self.openfileRoot.destroy()
         if callable(self.command):
             data = self.openfileRoot.mountFrame.fileTable.getSelectedItem()
             if data:
@@ -498,7 +499,6 @@ class openFileDialog():
             self.command(self.nowFilePath)
         else:
             print('callback function is wrong')
-        self.openfileRoot.destroy()
 
     def clickCANCEL(self):
         self.openfileRoot.destroy()
