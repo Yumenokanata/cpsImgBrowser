@@ -47,6 +47,17 @@ ANTIALIAS_SHOW_IMG = False
 CPS_CLASS = 0
 FILE_CLASS = 1
 
+IMG_NAME_MESSAGE = 0
+IMG_NUM_MESSAGE = 1
+FILE_NUM_MESSAGE = 2
+FILE_NAME_MESSAGE = 3
+
+MESSAGE_BAR_HEIGHT = 20
+MESSAGE_BAR_IMG_NAME_WIDTH = 0.4
+MESSAGE_BAR_IMG_NUM_WIDTH = 0.1
+MESSAGE_BAR_FILE_NUM_WIDTH = 0.1
+MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -118,6 +129,7 @@ class guardTh(threading.Thread):
         global label
         global mFilePos
         global mImgPos
+        global InfoMessage
 
         global nTime
         nTime = time.time()
@@ -131,7 +143,10 @@ class guardTh(threading.Thread):
                     self.nowFileInfo.FilePos = -1
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
                     ChangeFileLock.release()
-                    root.title("图片浏览器- No File")
+                    InfoMessage[IMG_NAME_MESSAGE].set('')
+                    InfoMessage[IMG_NUM_MESSAGE].set('')
+                    InfoMessage[FILE_NUM_MESSAGE].set('0/0')
+                    InfoMessage[FILE_NAME_MESSAGE].set('No File')
                     mImgLoadQueueLock.acquire()
                     self.imgList = []
                     self.nowShowImgPos = 0
@@ -161,7 +176,10 @@ class guardTh(threading.Thread):
                         self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
                     ChangeFileLock.release()
-                    root.title("图片浏览器-Loading/%d" % len(FILE_LIST))
+                    InfoMessage[IMG_NAME_MESSAGE].set('')
+                    InfoMessage[IMG_NUM_MESSAGE].set('')
+                    InfoMessage[FILE_NUM_MESSAGE].set('Loading/%d' % (len(FILE_LIST)))
+                    InfoMessage[FILE_NAME_MESSAGE].set('Loading')
                     mImgLoadQueueLock.acquire()
                     if self.openFile(t_direct) is FILE_CLASS:
                         t_file_class = FILE_CLASS
@@ -239,17 +257,14 @@ class guardTh(threading.Thread):
                 if showImg is BAD_FILE:
                     label.configure(image="")
                     label['text'] = "Bad Image"
-                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFileInfo.FilePos + 1,
-                                                                 len(FILE_LIST),
-                                                                 self.nowShowImgPos + 1,
-                                                                 self.imgNum,
-                                                                 imgName,
-                                                                 self.nowFileInfo.Filename)
-                    root.title(title)
+                    InfoMessage[IMG_NAME_MESSAGE].set(imgName)
+                    InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (self.nowShowImgPos + 1, self.imgNum))
+                    InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
+                    InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
                     mImgLoadQueueLock.release()
                     continue
                 img_w, img_h = showImg.size
-                win_h = root.winfo_height()
+                win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
                 win_w = root.winfo_width()
                 if win_h == 1:
                     win_h = 600
@@ -271,26 +286,18 @@ class guardTh(threading.Thread):
                 if show_img_resize is BAD_FILE:
                     label.configure(image="")
                     label['text'] = "Bad Image"
-                    title = "图片浏览器-%d/%d- %d/%d (0x0) %s --%s " % (self.nowFileInfo.FilePos + 1,
-                                                                 len(FILE_LIST),
-                                                                 self.nowShowImgPos + 1,
-                                                                 self.imgNum,
-                                                                 imgName,
-                                                                 self.nowFileInfo.Filename)
-                    root.title(title)
+                    InfoMessage[IMG_NAME_MESSAGE].set(imgName)
+                    InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (self.nowShowImgPos + 1, self.imgNum))
+                    InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
+                    InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
                     mImgLoadQueueLock.release()
                     continue
 
                 wr, hr = show_img_resize.size
-                title = "图片浏览器-%d/%d- %d/%d (%dx%d) %s --%s " % (self.nowFileInfo.FilePos + 1,
-                                                                 len(FILE_LIST),
-                                                                 self.nowShowImgPos + 1,
-                                                                 self.imgNum,
-                                                                 wr,
-                                                                 hr,
-                                                                 imgName,
-                                                                 self.nowFileInfo.Filename)
-                root.title(title)
+                setMessage(imgName,
+                           '%d/%d' % (self.nowShowImgPos + 1, self.imgNum),
+                           '%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)),
+                           self.nowFileInfo.Filename)
 
                 label['text']=""
                 label.configure(image = tk_img)
@@ -856,9 +863,20 @@ class loadImgTh(threading.Thread):
                     break
             mImgLoadQueueLock.release()
 
+def setMessage(imgName, imgNum, fileNum, fileName):
+    # s_width = root.winfo_width()
+    # print('s_width: ', s_width)
+    # maxImgNameLen = (s_width * MESSAGE_BAR_IMG_NAME_WIDTH) / 10
+    # if len(imgName.encode('utf-8')) > maxImgNameLen:
+    #     imgName = imgName[:int(maxImgNameLen / 3)] + '...' + imgName[-int(maxImgNameLen / 3):]
+    InfoMessage[IMG_NAME_MESSAGE].set(imgName)
+    InfoMessage[IMG_NUM_MESSAGE].set(imgNum)
+    InfoMessage[FILE_NUM_MESSAGE].set(fileNum)
+    InfoMessage[FILE_NAME_MESSAGE].set(fileName)
 
 def fileDialog(master, MODE):
-    openFileDialog(master, command=changeFileFromDialog)
+    global nowFilePath
+    openFileDialog(master, command=changeFileFromDialog, startPath=nowFilePath)
 
 def rotateImg(MODE):
     print(MODE)
@@ -867,31 +885,18 @@ def changeFileFromDialog(path):
     global FILE_LIST
     global label
     global ChangeFileFlag
+    global nowFilePath
     label.configure(image="")
     label['text'] = "Loading"
 
-    if len(sys.argv) < 2:
-        fd = FileDialog(root, title="要打开的文件")
-        MAIN_FILE_URI = fd.go()
-        if MAIN_FILE_URI == _NONE:
-            print("URI is wrong")
-            exit()
-        t_file_uri = MAIN_FILE_URI
-    else:
-        MAIN_FILE_URI = _NONE
-        for uri in sys.argv[1:]:
-            MAIN_FILE_URI += (uri + " ")
-        MAIN_FILE_URI = MAIN_FILE_URI[:-1]
-        t_file_uri = MAIN_FILE_URI
-
-    MAIN_FILE_URI = path
+    print('path', path)
+    nowFilePath = path
     t_file_name = _NONE
-    if os.path.isfile(MAIN_FILE_URI):
-        t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
-        MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
+    if os.path.isfile(nowFilePath):
+        t_file_name = nowFilePath.split(FILE_SIGN)[-1]
+        nowFilePath = nowFilePath.replace(t_file_name, "")
 
-
-    t_file_list = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+    t_file_list = getFileList(nowFilePath, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
 
     try:
         t_nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE})
@@ -908,20 +913,19 @@ def changeFileFromDialog(path):
         showwarning(title="对不起", message="该文件夹下没有可用文件")
         label['text'] = "No File"
 
-def mainUI(master):
+def initMenu(master):
     global mTwoViewMode
     master.menu = Menu(master)
 
     master.menu.filemenu = Menu(master)
     master.menu.filemenu.s_submenu = Menu(master)
     master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
-    master.menu.filemenu.add_command(label="打开文件...", command=lambda: fileDialog(master, OPEN_FILE))
-    master.menu.filemenu.add_command(label="打开文件夹...", command=lambda: fileDialog(master, OPEN_URI))
+    master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
     master.menu.filemenu.add_command(label="管理收藏库...", command=fileDialog)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_command(label="文件属性...", command=fileDialog)
     master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
-    master.menu.filemenu.add_command(label="首选项...", command=fileDialog)
+    master.menu.filemenu.add_command(label="首选项...", command=config)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_cascade(label='打开最近', menu=master.menu.filemenu.s_submenu)
     master.menu.filemenu.s_submenu.add_command(label="清空最近")
@@ -970,6 +974,52 @@ def mainUI(master):
 
     master['menu'] = master.menu
 
+def initMessage(master):
+    global InfoMessage
+
+    master.messageLabel = Label(master, bg='white')
+    master.messageLabel.place(relx=0, rely=1, height=MESSAGE_BAR_HEIGHT, relwidth=1, anchor=SW)
+    ImgNameVar = StringVar()
+    master.messageLabel.infoImgNameMessage = tkinter.Message(master.messageLabel, aspect=2000, textvariable=ImgNameVar, justify=LEFT)
+    master.messageLabel.infoImgNameMessage.place(in_=master.messageLabel,
+                                                 relx=0, rely=0,
+                                                 relheight=1,
+                                                 relwidth=MESSAGE_BAR_IMG_NAME_WIDTH - 0.001,
+                                                 anchor=NW)
+    # master.messageLabel.infoImgNameMessage.pack(side=LEFT)
+    ImgNumVar = StringVar()
+    master.messageLabel.infoImgNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=ImgNumVar, justify=RIGHT)
+    master.messageLabel.infoImgNumMessage.place(in_=master.messageLabel,
+                                                relx=0.4, rely=0,
+                                                relheight=1,
+                                                relwidth=MESSAGE_BAR_IMG_NUM_WIDTH - 0.001,
+                                                anchor=NW)
+    FileNumVar = StringVar()
+    master.messageLabel.infoFileNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=FileNumVar, justify=RIGHT)
+    master.messageLabel.infoFileNumMessage.place(in_=master.messageLabel,
+                                                 relx=0.5, rely=0,
+                                                 relheight=1,
+                                                 relwidth=MESSAGE_BAR_FILE_NUM_WIDTH - 0.001,
+                                                 anchor=NW)
+    FileNameVar = StringVar()
+    master.messageLabel.infoFileNameMessage = tkinter.Message(master.messageLabel, aspect=2000, textvariable=FileNameVar, justify=RIGHT)
+    master.messageLabel.infoFileNameMessage.place(in_=master.messageLabel,
+                                                  relx=0.6, rely=0,
+                                                  relheight=1,
+                                                  relwidth=MESSAGE_BAR_FILE_NAME_WIDTH - 0.001,
+                                                  anchor=NW)
+    ImgNameVar.set('OK')
+    ImgNumVar.set('OK')
+    FileNumVar.set('OK')
+    FileNameVar.set('OK')
+    InfoMessage = [ImgNameVar, ImgNumVar, FileNumVar, FileNameVar]
+
+def config():
+    configDialog(root, command=setConfig)
+
+def setConfig(data):
+    pass
+
 def slide():
     # print ("slide")
     global slideLock
@@ -1013,17 +1063,25 @@ def mouseEvent(ev):
     nTime = time.time()
     global slideT
     global SLIDE_START
-    if ev.x > root.winfo_width() / 3.0 * 2.0:
+    s_width = root.winfo_width()
+    s_height = root.winfo_height()
+    t=root.winfo_geometry()
+    win_w = int(t.split('+')[-2])
+    win_h = int(t.split('+')[-1])
+    ev_x = ev.x_root - win_w
+    ev_y = ev.y_root - win_h
+
+    if ev_x > s_width / 3.0 * 2.0:
         ShowPic(NEXT_IMG)
-    elif ev.x < root.winfo_width() / 3.0:
+    elif ev_x < s_width / 3.0:
         ShowPic(BACK_IMG)
-    elif ev.y > root.winfo_height() / 3.0 * 2.0:
+    elif ev_y > s_height / 3.0 * 2.0:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
             slideLock.release()
         changeFile(NEXT_FILE)
-    elif ev.y < root.winfo_height() / 3.0:
+    elif ev_y < s_height / 3.0:
         if slideT.isAlive():
             slideLock.acquire()
             SLIDE_START = False
@@ -1172,11 +1230,17 @@ if __name__ == '__main__':
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
-    mainUI(root)
-    mWinChanged = False
-    label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold')
-    label.pack(padx=15, pady=15, expand=1, fill="both")
+    root.title('图包浏览器')
+    initMenu(root)
+    # label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold', bg='red')
+    root.imgFrame = Frame(root)
+    root.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, anchor=CENTER)
+    label = tk.Label(root.imgFrame, image=_NONE, font='Helvetica -18 bold')
+    label.pack(expand=1, fill=BOTH)
+    # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
+    initMessage(root)
 
+    nowFilePath = os.getcwd() + '/'
     mImgPos = 0
     FILE_LIST = []
     ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE}
@@ -1186,18 +1250,18 @@ if __name__ == '__main__':
     guardTask = guardTh()
 
     if not len(sys.argv) < 2:
-        MAIN_FILE_URI = _NONE
+        nowFilePath = _NONE
         for uri in sys.argv[1:]:
-            MAIN_FILE_URI += (uri + " ")
-        MAIN_FILE_URI = MAIN_FILE_URI[:-1]
-        t_file_uri = MAIN_FILE_URI
+            nowFilePath += (uri + " ")
+        nowFilePath = nowFilePath[:-1]
+        t_file_uri = nowFilePath
 
         t_file_name = _NONE
-        if os.path.isfile(MAIN_FILE_URI):
-            t_file_name = MAIN_FILE_URI.split(FILE_SIGN)[-1]
-            MAIN_FILE_URI = MAIN_FILE_URI.replace(t_file_name, "")
+        if os.path.isfile(nowFilePath):
+            t_file_name = nowFilePath.split(FILE_SIGN)[-1]
+            nowFilePath = nowFilePath.replace(t_file_name, "")
 
-        FILE_LIST = getFileList(MAIN_FILE_URI, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
+        FILE_LIST = getFileList(nowFilePath, subfile=askquestion(title="子文件夹", message="是否扫描子文件夹?") == YES)
         ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
 
         try:

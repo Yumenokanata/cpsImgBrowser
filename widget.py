@@ -80,10 +80,13 @@ class myTable(Canvas):
 
         t_height = self.rowHeight
         for row in range(self.row):
-            if row % 2 == 1:
-                bg = self.WHITE_COLOR
+            if row != self.select_row:
+                if row % 2 == 1:
+                    bg = self.WHITE_COLOR
+                else:
+                    bg = self.BLACK_COLOR
             else:
-                bg = self.BLACK_COLOR
+                bg = self.SELECT_COLOR
 
             t_x = 2
             t_y = self.scrollY + self.titleHeight + row * self.rowHeight
@@ -116,7 +119,7 @@ class myTable(Canvas):
                     for i, col in enumerate(t_table[1]):
                         self.coords(col, (10 + self.x_list[i],
                                           3 + t_y))
-                        self.itemconfig(col, text=self.tableData[row][i])
+                        self.itemconfig(col, text=self.longStringToShort(self.tableData[row][i]))
                     self.tableRect[row] = t_table
                 else:
                     t_rect = self.create_rectangle(t_x,
@@ -130,7 +133,7 @@ class myTable(Canvas):
                         t_text = self.create_text(10 + self.x_list[col],
                                                   3 + t_y,
                                                   anchor='nw',
-                                                  text=self.tableData[row][col])
+                                                  text=self.longStringToShort(self.tableData[row][col]))
                         t_rowList.append(t_text)
                     self.tableRect[row] = [t_rect, t_rowList, t_x, t_y, row]
             else:
@@ -140,6 +143,11 @@ class myTable(Canvas):
         for col in range(1, self.column):
             self.TableLines.append(self.create_line((1 + self.x_list[col], self.titleHeight, 1 + self.x_list[col], self.titleHeight + self.row * self.rowHeight)))
 
+    def longStringToShort(self, String):
+        if len(String.encode('gbk')) > 40:
+            return String[:18] + '...' + String[-18:]
+        else:
+            return String
     def resetColumnSize(self, columnWidthList):
         # self.rowHeight = rowHeight
         # self.titleHeight = titleHeight
@@ -180,7 +188,7 @@ class myTable(Canvas):
             t_text = self.create_text(10 + self.x_list[col] + self.columnWidthList[col] / 2,
                              self.titleHeight / 2,
                              anchor=CENTER,
-                             text=self.titles[col])
+                             text=self.longStringToShort(self.titles[col]))
             self.titlesRect.append([t_rect, t_text])
 
     def cleanData(self):
@@ -315,9 +323,9 @@ class myTable(Canvas):
         self.clickEvent(event)
 
     def onDoubleClick(self, event):
-        self.clickEvent(event, 1)
+        self.clickEvent(event, isDoubleClick=1)
 
-    def clickEvent(self, event, Mode=0):
+    def clickEvent(self, event, isDoubleClick=0):
         if event.y < self.titleHeight:
             n = 0
             while event.x > self.x_list[n] + self.columnWidthList[n]:
@@ -347,27 +355,36 @@ class myTable(Canvas):
                 if self.tableRect[self.select_row]:
                     rt = self.tableRect[self.select_row][0]
                     self.itemconfigure(rt, fill=bg)
-        self.select_row = index
+        if self.select_row != index:
+            self.select_row = index
 
-        rt = self.tableRect[index][0]
-        self.itemconfigure(rt, fill=self.SELECT_COLOR)
+            rt = self.tableRect[index][0]
+            self.itemconfigure(rt, fill=self.SELECT_COLOR)
+        else:
+            self.select_row = -1
 
-        if Mode and callable(self.tableCommand):
+        if isDoubleClick and callable(self.tableCommand):
             data = [index, self.tableData[index]]
             self.tableCommand(data)
 
 class openFileDialog():
-    def __init__(self, master, command=None):
+    def __init__(self, master, command=None, startPath=None):
         self.REVERSE_FILE_TABLE = False
         self.nowFileList = None
         self.nowFilePath = None
+        if startPath:
+            if not startPath.endswith('/'):
+                startPath += '/'
+            self.nowFilePath = startPath
+        else:
+            self.nowFilePath = os.getcwd() + '/'
         self.openFile(master)
         self.command = command
 
     def onDoubleClickFileTable(self, data):
         new_path = data[1][0]
         if new_path == '..':
-            backUri()
+            self.backUri()
             return
         if os.path.isdir(self.nowFilePath + new_path + '/'):
             self.nowFilePath = self.nowFilePath + new_path + '/'
@@ -421,7 +438,7 @@ class openFileDialog():
 
     def changeFile(self, new_path):
         if new_path == '..':
-            backUri()
+            self.backUri()
             return
         self.nowFilePath = self.nowFilePath + new_path + '/'
         self.uriV.set(self.nowFilePath)
@@ -454,10 +471,7 @@ class openFileDialog():
                     fi.filename.index(filter)
                 except:
                     continue
-            if len(fi.filename) > 27:
-                t_filename = fi.filename[:10] + '...' + fi.filename[-10:]
-            else:
-                t_filename = fi.filename
+            t_filename = fi.filename
 
             l = ['字节', 'KB', 'MB', 'GB']
             t_size = fi.size
@@ -562,17 +576,6 @@ class openFileDialog():
         self.openfileRoot.mountFrame.mFilterEntry = Entry(self.openfileRoot.mountFrame, textvariable=self.filterV, width=30)
         self.openfileRoot.mountFrame.mFilterEntry.bind('<KeyRelease>', self.setFileFilter)
         self.openfileRoot.mountFrame.mFilterEntry.pack(side=RIGHT, padx=50)
-        # self.filterV.set('全部文件')
-        # self.openfileRoot.mountFrame.filterOptionMenu = ttk.Combobox(self.openfileRoot.mountFrame,
-        #                                                              textvariable=self.filterV,
-        #                                                              values=['全部文件',
-        #                                                                      'rar压缩文件',
-        #                                                                      'zip压缩文件',
-        #                                                                      'jpg文件',
-        #                                                                      'png文件',
-        #                                                                      '文件夹'])
-        # self.openfileRoot.mountFrame.filterOptionMenu.pack(side=LEFT)
-        # self.openfileRoot.mountFrame.filterOptionMenu.bind('<Button-1>', self.setFileFilter)
 
         self.openfileRoot.okFrame = Frame(self.openfileRoot)
         self.openfileRoot.okFrame.pack(fill=X, expand=1, padx=25, pady=5)
@@ -581,7 +584,6 @@ class openFileDialog():
         self.openfileRoot.okFrame.cancelButton = Button(self.openfileRoot.okFrame, text='取消', width=10, command=self.clickCANCEL)
         self.openfileRoot.okFrame.cancelButton.pack(side=RIGHT, padx=25)
 
-        self.nowFilePath = os.getcwd() + '/'
         self.uriV.set(self.nowFilePath)
         self.refreshFileListBox(self.nowFilePath)
 
