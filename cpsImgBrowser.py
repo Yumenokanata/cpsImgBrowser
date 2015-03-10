@@ -191,6 +191,17 @@ class guardTh(threading.Thread):
     def finish(self):
         self.live = False
 
+    def getNowFileInfo(self):
+        global ChangeFileLock
+        global mNowFileInfo
+
+        ChangeFileLock.acquire()
+        returnData = {'filename': mNowFileInfo['filename'],
+                      'uri': mNowFileInfo['uri'],
+                      'imgNum': self.imgNum}
+        ChangeFileLock.release()
+        return returnData
+
     def run(self):
         global mImgLoadQueueLock
         global changeImgLock
@@ -248,9 +259,9 @@ class guardTh(threading.Thread):
                         FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
                     self.nowShowImgPos = 0
                     if t_direct is JUMP_FILE:
-                        self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
+                        self.nowFileInfo.FilePos = ChangeFileFlag["willFilePos"]
                     if t_direct is CHANGE_FILE:
-                        self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
+                        self.nowFileInfo.FilePos = ChangeFileFlag["willFilePos"]
                         self.nowShowImgPos = ChangeFileFlag['imgPos']
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
                     ChangeFileLock.release()
@@ -1028,7 +1039,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     ChangeFileLock.acquire()
     FILE_LIST = t_file_list
     ChangeFileFlag["direct"] = CHANGE_FILE
-    ChangeFileFlag["nowFilePos"] = t_nowFilePos
+    ChangeFileFlag["willFilePos"] = t_nowFilePos
     ChangeFileFlag["imgPos"] = imgPos
     ChangeFileLock.release()
 
@@ -1048,6 +1059,122 @@ def cleanLatelyFileData():
     latelyMenu.delete(0, END)
     mConfigData.latelyFileInfo = []
 
+def showInfoOfFile():
+    global root
+    global guardTask
+    root.showInfoWin = Toplevel(root)
+    root.showInfoWin.title('文件信息')
+    root.showInfoWin.wm_attributes('-topmost', 0.5)
+    root.showInfoWin.wm_resizable(width=False, height=False)
+    s_x = root.winfo_x()
+    s_y = root.winfo_y()
+    t = root.winfo_geometry()
+    win_w = int(t.split('x')[0])
+    win_h = int(t.split('x')[1].split('+')[0])
+    root.showInfoWin.geometry("390x250+%d+%d" % ((win_w - 500) / 2 + s_x, (win_h - 450) / 2 + s_y))
+
+    t_info = guardTask.getNowFileInfo()
+    t_filename = t_info['filename']
+    t_uri = t_info['uri']
+    path = os.path.join(t_uri, t_filename)
+    a_time = os.path.getmtime(path)
+    m_time = os.path.getmtime(path)
+    c_time = os.path.getctime(path)
+
+    if os.path.isfile(path):
+        t_size = os.path.getsize(path)
+        if t_filename.endswith('rar'):
+            t_class = 'RAR文件'
+        elif t_filename.endswith('zip'):
+            t_class = 'ZIP文件'
+    else:
+        t_size = getDirSize(path)
+        t_class = '文件夹'
+
+    l = ['字节', 'KB', 'MB', 'GB']
+    n = 0
+    while n < 3 and t_size / 1024.0 > 1:
+        t_size /= 1024.0
+        n += 1
+    t_size = ("%.1f"%(t_size)) + l[n]
+
+    filenameTitleString = '文件名:'
+    title1String = '类型:'
+    title1String += '\n大小:'
+    title1String += '\n图片数:'
+    uriTitleString = '所在位置:'
+    title2String = '访问日期:'
+    title2String += '\n修改日期:'
+    title2String += '\n创建日期:'
+
+    info1String = t_class
+    info1String += '\n' + t_size
+    info1String += '\n' + str(t_info['imgNum'])
+    info2String = time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(a_time))
+    info2String += '\n' + time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(m_time))
+    info2String += '\n' + time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(c_time))
+
+    ft = Font(family='Fixdsys', size=10)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=filenameTitleString,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=0, column=0, sticky=NW, padx=20, pady=10)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=t_filename,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=0, column=1, sticky=NW, pady=10)
+
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=title1String,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=1, column=0, sticky=NW, padx=20)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=info1String,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=1, column=1, sticky=NW)
+
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=uriTitleString,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=2, column=0, sticky=NW, padx=20)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=t_uri,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=2, column=1, sticky=NW)
+
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=title2String,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=3, column=0, sticky=NW, padx=20)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin,
+                                       wraplength=270,
+                                       text=info2String,
+                                       font=ft,
+                                       justify=LEFT)
+    root.showInfoWin.infoLabel.grid(row=3, column=1, sticky=NW)
+
+    root.showInfoWin.mainloop()
+
+def getDirSize(dir):
+    size = 0
+    for root, dirs, files in os.walk(dir):
+        size += sum([os.path.getsize(os.path.join(root, name)) for name in files])
+    return size
+
 # TODO 失败品
 def testMyAskString():
     s = myAskString(root, '测试', '这是测试信息')
@@ -1064,7 +1191,7 @@ def initMenu(master):
     master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
     master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
     master.menu.filemenu.add_separator()
-    master.menu.filemenu.add_command(label="文件属性...", command=fileDialog)
+    master.menu.filemenu.add_command(label="文件属性...", command=showInfoOfFile)
     master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
     master.menu.filemenu.add_command(label="首选项...", command=config)
     master.menu.filemenu.add_separator()
@@ -1236,7 +1363,7 @@ def changeFile(direct, jump_file=0):
     ChangeFileFlag["direct"] = direct
     ChangeFileFlag['imgPos'] = 0
     if direct is JUMP_FILE:
-        ChangeFileFlag["nowFilePos"] = jump_file
+        ChangeFileFlag["willFilePos"] = jump_file
     ChangeFileLock.release()
 
 def mouseEvent(ev):
@@ -1412,7 +1539,9 @@ def closeWin():
     guardTask.finish()
     loadTask.finish()
     while guardTask.isAlive() or loadTask.isAlive():
-        time.sleep(0.5)
+        guardTask.finish()
+        loadTask.finish()
+        time.sleep(0.1)
     root.destroy()
 
 '''入口'''
