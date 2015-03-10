@@ -43,6 +43,12 @@ CHANGE_FILE = 4
 
 BAD_FILE = "bad_file"
 
+RANDOM_JUMP_IMG = False
+RANDOM_LIST = [n for n in range(99999)]
+random.shuffle(RANDOM_LIST)
+RANDOM_LIST_LENGTH = 99999
+RANDOM_LIST_INDEX = 0
+
 CPS_CLASS = 0
 FILE_CLASS = 1
 
@@ -115,7 +121,8 @@ class _configData():
                  slideTime=3,
                  saveFilePassword=True,
                  useCustomSort=True,
-                 scaleMode=NEAREST):
+                 scaleMode=NEAREST,
+                 twoPageMode=False):
         self.background = background
         self.customBackground = customBackground
         self.restore = restore
@@ -130,6 +137,7 @@ class _configData():
         self.saveFilePassword = saveFilePassword
         self.useCustomSort = useCustomSort
         self.scaleMode = scaleMode
+        self.twoPageMode = twoPageMode
 
     def getDataDict(self):
         return {'background': self.background,
@@ -145,7 +153,8 @@ class _configData():
                 'slideTime': self.slideTime,
                 'saveFilePassword': self.saveFilePassword,
                 'useCustomSort': self.useCustomSort,
-                'scaleMode': self.scaleMode}
+                'scaleMode': self.scaleMode,
+                'twoPageMode': self.twoPageMode}
 
     def setDataFromDict(self, dict):
         self.background = dict['background']
@@ -162,6 +171,7 @@ class _configData():
         self.saveFilePassword = dict['saveFilePassword']
         self.useCustomSort = dict['useCustomSort']
         self.scaleMode = dict['scaleMode']
+        self.twoPageMode = dict['twoPageMode']
 
 class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
@@ -180,6 +190,7 @@ class guardTh(threading.Thread):
         self.shouldLoadImg = False
         self.shouldRefreshImg = False
         self.live = True
+        self.twoPageMode = False
 
     class _now_file_info():
         def __init__(self, pos=-1, filename=_NONE, file=_NONE, _class=CPS_CLASS):
@@ -212,9 +223,11 @@ class guardTh(threading.Thread):
         global FILE_LIST
         global root
         global label
+        global label2
         global mNowFileInfo
         global mImgPos
         global InfoMessage
+        global mConfigData
 
         global nTime
         nTime = time.time()
@@ -332,72 +345,139 @@ class guardTh(threading.Thread):
                     changeImgLock.release()
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
+                if mConfigData.twoPageMode:
+                    twoPageNum = (self.nowShowImgPos + 1) % self.imgNum
+                    if not self.imgCache[twoPageNum]:
+                        continue
                 # print("Change Img Time: %f " % (time.time() - nTime))
                 mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
-                imgName = self.imgList[self.nowShowImgPos].filename
-                imgName = imgName.replace("\\", "/")
-                imgName = imgName.split('/')[-1]
-                try:
-                    imgName = imgName.encode('cp437')
-                    imgName = imgName.decode("gbk")
-                except:
-                    pass
 
-                showImg = self.imgCache[self.nowShowImgPos]
-                if showImg is BAD_FILE:
-                    label.configure(image="")
-                    label['text'] = "Bad Image"
-                    InfoMessage[IMG_NAME_MESSAGE].set(imgName)
-                    InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (self.nowShowImgPos + 1, self.imgNum))
-                    InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
-                    InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
-                    mImgLoadQueueLock.release()
-                    continue
-                img_w, img_h = showImg.size
-                win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
-                win_w = root.winfo_width()
-                if win_h == 1:
-                    win_h = 600
-                    win_w = 800
-                scale = 1.0 * win_h / img_h
-                if img_w * scale > win_w:
-                    scale = 1.0 * win_w / img_w
-                if scale <= 1:
-                    box_height = img_h * scale
-                    box_width = img_w * scale
-                    show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
+                if mConfigData.twoPageMode:
+                    isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
+                    if isGoodImg:
+                        imgName_a = self.imgList[self.nowShowImgPos].filename
+                        imgName_b = self.imgList[twoPageNum].filename
+                        self.setImgMessage(isGoodImg, imgName_a + ' / ' + imgName_b, self.nowShowImgPos)
+                    else:
+                        self.loadSinglePage(self.nowShowImgPos)
                 else:
-                    show_img_resize = showImg
-                try:
-                    tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
-                except:
-                    show_img_resize = BAD_FILE
-
-                if show_img_resize is BAD_FILE:
-                    label.configure(image="")
-                    label['text'] = "Bad Image"
-                    InfoMessage[IMG_NAME_MESSAGE].set(imgName)
-                    InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (self.nowShowImgPos + 1, self.imgNum))
-                    InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
-                    InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
-                    mImgLoadQueueLock.release()
-                    continue
-
-                wr, hr = show_img_resize.size
-                setMessage(imgName,
-                           '%d/%d' % (self.nowShowImgPos + 1, self.imgNum),
-                           '%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)),
-                           self.nowFileInfo.Filename)
-
-                label['text']=""
-                label.configure(image = tk_img)
-                label.image = tk_img
-                label.pack(padx=5, pady=5)
+                    self.loadSinglePage(self.nowShowImgPos)
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
                 mImgLoadQueueLock.release()
+
+    def loadSinglePage(self, imgPos):
+        global label
+        imgName = self.imgList[imgPos].filename
+        imgName = self.checkImgName(imgName)
+        win_w = root.winfo_width()
+        win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
+        if win_h == 1:
+            win_w = 800
+            win_h = 600
+        t_showImg = self.imgCache[self.nowShowImgPos]
+        reSize = self.getFitBoxSize(t_showImg, win_w, win_h)
+        if not reSize:
+            self.setImgMessage(False, imgName, imgPos)
+            return False
+        show_img_resize = self.resizePic(reSize[0], reSize[1], reSize[2], reSize[3], t_showImg)
+        try:
+            tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
+        except:
+            self.setImgMessage(False, imgName, imgPos)
+
+        label['text']=""
+        label.configure(image = tk_img)
+        label.image = tk_img
+        label2.configure(image="")
+        self.setImgMessage(True, imgName, imgPos)
+        return True
+
+    def loadTwoPage(self, imgPos_a, imgPos_b):
+        if imgPos_a == BAD_FILE or imgPos_b == BAD_FILE:
+            return False
+        imgName_a = self.imgList[imgPos_a].filename
+        imgName_a = self.checkImgName(imgName_a)
+        imgName_b = self.imgList[imgPos_b].filename
+        imgName_b = self.checkImgName(imgName_b)
+        win_w = root.winfo_width()
+        win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
+        if win_h == 1:
+            win_w = 800
+            win_h = 600
+
+        t_showImg_a = self.imgCache[imgPos_a]
+        reSize_a = self.getFitBoxSize(t_showImg_a, win_w / 2, win_h)
+        if not reSize_a:
+            return False
+        if reSize_a[0] > reSize_a[1]:
+            return False
+        t_showImg_b = self.imgCache[imgPos_b]
+        reSize_b = self.getFitBoxSize(t_showImg_b, win_w / 2, win_h)
+        if not reSize_b:
+            return False
+        if reSize_b[0] > reSize_b[1]:
+            return False
+
+        show_img_resize_a = self.resizePic(reSize_a[0], reSize_a[1], reSize_a[2], reSize_a[3], t_showImg_a)
+        try:
+            tk_img_a = PIL.ImageTk.PhotoImage(show_img_resize_a)
+        except:
+            return False
+        show_img_resize_b = self.resizePic(reSize_b[0], reSize_b[1], reSize_b[2], reSize_b[3], t_showImg_b)
+        try:
+            tk_img_b = PIL.ImageTk.PhotoImage(show_img_resize_b)
+        except:
+            return False
+
+        label['text']=""
+        label.configure(image = tk_img_a)
+        label.image = tk_img_a
+        label2.configure(image = tk_img_b)
+        label2.image = tk_img_b
+        return True
+
+    def checkImgName(self, imgName):
+        t_imgName = imgName.replace("\\", "/")
+        t_imgName = t_imgName.split('/')[-1]
+        try:
+            t_imgName = t_imgName.encode('cp437')
+            t_imgName = t_imgName.decode("gbk")
+        except:
+            pass
+        return t_imgName
+
+    def setImgMessage(self, isGoodImg, imgName, imgPos):
+        if not isGoodImg:
+            label.configure(image="")
+            label2.configure(image="")
+            label['text'] = "Bad Image"
+            InfoMessage[IMG_NAME_MESSAGE].set(imgName)
+            InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (imgPos + 1, self.imgNum))
+            InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
+            InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
+        else:
+            setMessage(imgName,
+                       '%d/%d' % (imgPos + 1, self.imgNum),
+                       '%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)),
+                       self.nowFileInfo.Filename)
+
+    def getFitBoxSize(self, showImg, box_x, box_y):
+        if showImg is BAD_FILE:
+            return False
+        img_w, img_h = showImg.size
+        scale = 1.0 * box_y / img_h
+        if img_w * scale > box_x:
+            scale = 1.0 * box_x / img_w
+        if scale <= 1:
+            box_width = img_w * scale
+            box_height = img_h * scale
+        else:
+            box_width = img_w
+            box_height = img_h
+        return [img_w, img_h, box_width, box_height]
 
     def addQueue(self, start_pos):
         global mConfigData
@@ -426,6 +506,8 @@ class guardTh(threading.Thread):
         return md5
 
     def resizePic(self, w, h, rw, rh, pil_image):
+        if w == rw and h == rh:
+            return pil_image
         global mConfigData
         f1 = 1.0 * rw / w
         f2 = 1.0 * rh / h
@@ -812,6 +894,7 @@ class guardTh(threading.Thread):
                     while pwd == '':
                         if PLATFORM == 'Windows':
                             label.configure(image="")
+                            label2.configure(image="")
                             label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
                             print("Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
                             pwd = input('请输入密码: ')
@@ -902,6 +985,7 @@ class guardTh(threading.Thread):
                     while pwd == '':
                         if PLATFORM == 'Windows':
                             label.configure(image="")
+                            label2.configure(image="")
                             label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
                             print("Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
                             pwd = input('请输入密码: ')
@@ -1018,10 +1102,12 @@ def rotateImg(MODE):
 def changeFileFromDialog(path, imgPos=0, filename=''):
     global FILE_LIST
     global label
+    global label2
     global ChangeFileFlag
     global nowFilePath
     global mConfigData
     label.configure(image="")
+    label2.configure(image="")
     label['text'] = "Loading"
 
     print('path', path)
@@ -1149,6 +1235,13 @@ def testMyAskString():
     print('testMyAskString')
     print('returnData: ', s)
 
+def enableRandomJumpImg():
+    global RANDOM_JUMP_IMG
+    RANDOM_JUMP_IMG = not RANDOM_JUMP_IMG
+
+def setTwoPageMode():
+    mConfigData.twoPageMode = not mConfigData.twoPageMode
+
 def initMenu(master):
     global mTwoViewMode
     global mConfigData
@@ -1174,7 +1267,8 @@ def initMenu(master):
     master.menu.viewmenu = Menu(master)
     master.menu.add_cascade(label='查看',menu=master.menu.viewmenu)
     mTwoViewMode = IntVar()
-    master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=fileDialog)
+    mTwoViewMode.set(mConfigData.twoPageMode)
+    master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=setTwoPageMode)
     master.menu.viewmenu.add_separator()
     mViewMode = StringVar()
     master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=fileDialog)
@@ -1202,7 +1296,7 @@ def initMenu(master):
     mSlide = IntVar()
     master.menu.jumpmenu.add_checkbutton(variable=mSlide, label="放映幻灯片",command=fileDialog)
     mRandomSlide = IntVar()
-    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机播放模式", command=fileDialog)
+    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机播放模式", command=enableRandomJumpImg)
 
     master.menu.bookmarkmenu = Menu(master)
     master.menu.add_cascade(label='书签',menu=master.menu.bookmarkmenu)
@@ -1275,6 +1369,7 @@ def setConfig(data):
         root.mainFrame['bg'] = mConfigData.background
         root.mainFrame.imgFrame['bg'] = mConfigData.background
         label['bg'] = mConfigData.background
+        label2['bg'] = mConfigData.background
 
 def getConfigFromFile():
     t_config = _configData()
@@ -1311,20 +1406,37 @@ def slide():
 def ShowPic(value, jump_num=0):
     global changeImgLock
     global mImgPos
+    global mConfigData
+    global RANDOM_LIST
+    global RANDOM_LIST_INDEX
+    global RANDOM_LIST_LENGTH
+    t_step = 1
+    if mConfigData.twoPageMode:
+        t_step = 2
 
     changeImgLock.acquire()
-    if value is BACK_IMG:
-        mImgPos -= 1
-    elif value is NEXT_IMG:
-        mImgPos += 1
-    elif value is JUMP_IMG:
-        mImgPos = jump_num
+    if RANDOM_JUMP_IMG:
+        if value is BACK_IMG:
+            RANDOM_LIST_INDEX -= 1
+        else:
+            RANDOM_LIST_INDEX += 1
+        RANDOM_LIST_INDEX %= RANDOM_LIST_LENGTH
+        mImgPos = RANDOM_LIST[RANDOM_LIST_INDEX]
+    else:
+        if value is BACK_IMG:
+            mImgPos -= t_step
+        elif value is NEXT_IMG:
+            mImgPos += t_step
+        elif value is JUMP_IMG:
+            mImgPos = jump_num
     changeImgLock.release()
 
 def changeFile(direct, jump_file=0):
     global label
+    global label2
     global ChangeFileFlag
     label.configure(image="")
+    label2.configure(image="")
     label['text'] = "Loading"
 
     ChangeFileLock.acquire()
@@ -1530,7 +1642,10 @@ if __name__ == '__main__':
     root.mainFrame.imgFrame = Frame(root.mainFrame, bg=mConfigData.background)
     root.mainFrame.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, anchor=CENTER)
     label = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
-    label.pack(expand=1, fill=BOTH)
+    label.grid()
+    label2 = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
+    label2.grid(row=0, column=1)
+    # label2.grid_forget()
     # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
     initMessage(root.mainFrame)
 
@@ -1544,6 +1659,7 @@ if __name__ == '__main__':
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
+    guardTask.twoPageMode = mConfigData.twoPageMode
     slideT = threading.Timer(0, slide)
     slideLock = threading.Lock()
     mImgLoadQueueLock = threading.Lock()
