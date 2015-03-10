@@ -58,6 +58,12 @@ MESSAGE_BAR_IMG_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
 
+NONE = 0
+NEAREST = 0
+ANTIALIAS = 1
+LINEAR = 2
+CUBIC = 3
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -95,10 +101,12 @@ class _KeyCode():
 
 
 class _configData():
-    def __init__(self, background='lightgrey',
+    def __init__(self, background='#d3d3d3',
+                 customBackground='#d3d3d3',
                  restore=True,
                  restoreData={'filename':'',
-                              'uri':''},
+                              'uri':'',
+                              'imgPos': 0},
                  saveLatelyFileInfo=True,
                  latelyFileInfo=[],
                  scanSubFile=True,
@@ -107,8 +115,10 @@ class _configData():
                  useCache=True,
                  slideTime=3,
                  saveFilePassword=True,
-                 useCustomSort=True):
+                 useCustomSort=True,
+                 scaleMode=NEAREST):
         self.background = background
+        self.customBackground = customBackground
         self.restore = restore
         self.restoreData = restoreData
         self.saveLatelyFileInfo = saveLatelyFileInfo
@@ -120,9 +130,11 @@ class _configData():
         self.slideTime = slideTime
         self.saveFilePassword = saveFilePassword
         self.useCustomSort = useCustomSort
+        self.scaleMode = scaleMode
 
     def getDataDict(self):
         return {'background': self.background,
+                'customBackground': self.customBackground,
                 'restore': self.restore,
                 'restoreData': self.restoreData,
                 'saveLatelyFileInfo': self.saveLatelyFileInfo,
@@ -133,10 +145,12 @@ class _configData():
                 'useCache': self.useCache,
                 'slideTime': self.slideTime,
                 'saveFilePassword': self.saveFilePassword,
-                'useCustomSort': self.useCustomSort}
+                'useCustomSort': self.useCustomSort,
+                'scaleMode': self.scaleMode}
 
     def setDataFromDict(self, dict):
         self.background = dict['background']
+        self.customBackground = dict['customBackground']
         self.restore = dict['restore']
         self.restoreData = dict['restoreData']
         self.saveLatelyFileInfo = dict['saveLatelyFileInfo']
@@ -148,6 +162,7 @@ class _configData():
         self.slideTime = dict['slideTime']
         self.saveFilePassword = dict['saveFilePassword']
         self.useCustomSort = dict['useCustomSort']
+        self.scaleMode = dict['scaleMode']
 
 class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
@@ -226,10 +241,12 @@ class guardTh(threading.Thread):
                 else:
                     if not t_direct is CHANGE_FILE:
                         FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
+                    self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
                     if t_direct is JUMP_FILE:
-                        if self.nowFileInfo.FilePos == ChangeFileFlag["nowFilePos"]:
-                            continue
                         self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
+                    if t_direct is CHANGE_FILE:
+                        self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
+                        self.nowShowImgPos = ChangeFileFlag['imgPos']
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
                     ChangeFileLock.release()
                     InfoMessage[IMG_NAME_MESSAGE].set('')
@@ -243,7 +260,6 @@ class guardTh(threading.Thread):
                     else:
                         t_file_class = CPS_CLASS
                         self.imgList = self.getImageList(self.nowFileInfo.File)
-                    self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
 
                     # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                     # print("Load File Time: " + str(time.time() - st1))
@@ -302,7 +318,7 @@ class guardTh(threading.Thread):
                 self.shouldRefreshImg = False
                 imgName = self.imgList[self.nowShowImgPos].filename
                 imgName = imgName.replace("\\", "/")
-                # imgName = imgName.split('/')[-1]
+                imgName = imgName.split('/')[-1]
                 try:
                     imgName = imgName.encode('cp437')
                     imgName = imgName.decode("gbk")
@@ -939,7 +955,7 @@ def fileDialog(master, MODE):
 def rotateImg(MODE):
     print(MODE)
 
-def changeFileFromDialog(path):
+def changeFileFromDialog(path, imgPos=0, filename=''):
     global FILE_LIST
     global label
     global ChangeFileFlag
@@ -950,22 +966,27 @@ def changeFileFromDialog(path):
 
     print('path', path)
     nowFilePath = path
-    t_file_name = _NONE
-    if os.path.isfile(nowFilePath):
-        t_file_name = nowFilePath.split(FILE_SIGN)[-1]
-        nowFilePath = nowFilePath.replace(t_file_name, "")
+    if filename:
+        t_file_name = filename
+    else:
+        t_file_name = _NONE
+        if os.path.isfile(nowFilePath):
+            t_file_name = nowFilePath.split(FILE_SIGN)[-1]
+            nowFilePath = nowFilePath.replace(t_file_name, "")
 
     t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
 
-    try:
-        t_nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass": CPS_CLASS, "CanRead": TRUE})
-    except:
-        t_nowFilePos = 0
+    t_nowFilePos = 0
+    for i,l in enumerate(t_file_list):
+        if l["filename"] == t_file_name:
+            t_nowFilePos = i
+            break
 
     ChangeFileLock.acquire()
     FILE_LIST = t_file_list
     ChangeFileFlag["direct"] = CHANGE_FILE
     ChangeFileFlag["nowFilePos"] = t_nowFilePos
+    ChangeFileFlag["imgPos"] = imgPos
     ChangeFileLock.release()
 
     if not t_file_list:
@@ -1078,9 +1099,24 @@ def config():
     configDialog(root, command=setConfig, oldConfig=mConfigData)
 
 def setConfig(data):
-    global mConfigData
-    mConfigData = data
-    saveConfigToFile(mConfigData)
+    if data:
+        global mConfigData
+        mConfigData.background = data.background
+        mConfigData.customBackground = data.customBackground
+        mConfigData.restore = data.restore
+        mConfigData.saveLatelyFileInfo = data.saveLatelyFileInfo
+        mConfigData.scanSubFile = data.scanSubFile
+        mConfigData.scanSubFileDepth = data.scanSubFileDepth
+        mConfigData.useCache = data.useCache
+        mConfigData.slideTime = data.slideTime
+        mConfigData.saveFilePassword = data.saveFilePassword
+        mConfigData.useCustomSort = data.useCustomSort
+        mConfigData.scaleMode = data.scaleMode
+        saveConfigToFile(mConfigData)
+
+        root.mainFrame['bg'] = mConfigData.background
+        root.mainFrame.imgFrame['bg'] = mConfigData.background
+        label['bg'] = mConfigData.background
 
 def getConfigFromFile():
     t_config = _configData()
@@ -1134,6 +1170,7 @@ def changeFile(direct, jump_file=0):
 
     ChangeFileLock.acquire()
     ChangeFileFlag["direct"] = direct
+    ChangeFileFlag['imgPos'] = 0
     if direct is JUMP_FILE:
         ChangeFileFlag["nowFilePos"] = jump_file
     ChangeFileLock.release()
@@ -1295,6 +1332,21 @@ def getFileList(file_uri, subfile=False, depth=0):
         t_file_list.append({"filename": file_uri.split(FILE_SIGN)[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
     return t_file_list
 
+def closeWin():
+    global mImgLoadQueueLock
+    global changeImgLock
+    global ChangeFileLock
+    global ChangeFileFlag
+    global RandomLoadImgFlag
+    global willLoadImgQueue
+    global FILE_LIST
+    global root
+    global label
+    global mFilePos
+    global mImgPos
+    global InfoMessage
+    
+
 '''入口'''
 if __name__ == '__main__':
     if PLATFORM == 'Linux':
@@ -1307,7 +1359,11 @@ if __name__ == '__main__':
     mConfigData = getConfigFromFile()
 
     root = tk.Tk()
-    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2) )
+    root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2))
+    root.protocol('WM_DELETE_WINDOW', closeWin)
+    # TODO
+    # root.wm_attributes('-zoomed',1)
+    root.wm_attributes('-topmost', 0)
     root.bind("<Button-1>", mouseEvent)
     root.bind("<Key>", onKeyPress)
     root.title('图包浏览器')
@@ -1326,11 +1382,17 @@ if __name__ == '__main__':
     nowFilePath = os.getcwd() + '/'
     mImgPos = 0
     FILE_LIST = []
-    ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE}
+    ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE, 'imgPos': 0}
     RandomLoadImgFlag = False
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
+    slideT = threading.Timer(0, slide)
+    slideLock = threading.Lock()
+    mImgLoadQueueLock = threading.Lock()
+    changeImgLock = threading.Lock()
+    ChangeFileLock = threading.Lock()
+    SLIDE_START = False
 
     if not len(sys.argv) < 2:
         nowFilePath = _NONE
@@ -1345,19 +1407,17 @@ if __name__ == '__main__':
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
         FILE_LIST = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
-        ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE}
+        ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE, 'imgPos': 0}
 
         try:
             guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
         except:
             guardTask.nowFilePos = 0
 
-    slideT = threading.Timer(0, slide)
-    slideLock = threading.Lock()
-    mImgLoadQueueLock = threading.Lock()
-    changeImgLock = threading.Lock()
-    ChangeFileLock = threading.Lock()
-    SLIDE_START = False
+    elif mConfigData.restore and mConfigData.restoreData['filename']:
+        t_path = mConfigData.restoreData['uri']
+        t_imgPos = mConfigData.restoreData['imgPos']
+        changeFileFromDialog(t_path, filename=mConfigData.restoreData['filename'], imgPos=t_imgPos)
 
     try:
         with open('.' + FILE_SIGN + 'Pwd.json', 'r') as f:

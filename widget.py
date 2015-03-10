@@ -1,6 +1,7 @@
 from tkinter import *
 from tkinter.font import *
 from tkinter import ttk
+from tkinter import colorchooser
 import os
 import getpass
 import time
@@ -609,43 +610,232 @@ class openFileDialog():
         self.uriV.set(self.nowFilePath)
         self.refreshFileListBox(self.nowFilePath)
 
+NONE = 0
+NEAREST = 0
+ANTIALIAS = 1
+LINEAR = 2
+CUBIC = 3
+
 class configDialog():
     def __init__(self, master, command=None, oldConfig=None):
+        self.scaleModeList = ['最近邻插值',
+                              '抗锯齿',
+                              '双线性插值',
+                              '立方插值']
+        self.command = command
         self.configData = oldConfig
-        ft = Font(family='Fixdsys', size=10)
+        self.ft = Font(family='Fixdsys', size=10)
         self.configRoot = Toplevel(master)
-        self.configRoot.wm_attributes('-topmost',1)
+        self.configRoot.wm_attributes('-topmost', 0.5)
+        self.configRoot.wm_resizable(width=False, height=False)
         t_screen_width, t_screen_height = master.maxsize()
-        self.configRoot.geometry("800x600+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
+        self.configRoot.geometry("500x320+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
 
-        self.configRoot.backgroundFrame = LabelFrame(self.configRoot, text='背景', font=ft)
-        self.configRoot.backgroundFrame.place(x=0, y=0, width=400, height=400, anchor=NW)
-        self.backIntV = IntVar()
-        if self.configData.background == 'lightgrey':
-            self.backIntV.set(0)
-        elif self.configData.background == 'black':
-            self.backIntV.set(1)
-        else:
-            self.backIntV.set(2)
-        self.backIntV.set(2)
-        self.configRoot.backgroundFrame.lightRadioButton = Radiobutton(self.configRoot.backgroundFrame,
-                                                                       text='使用灰色背景',
-                                                                       font=ft,
-                                                                       variable=self.backIntV,
-                                                                       value=0)
-        self.configRoot.backgroundFrame.lightRadioButton.grid(columnspan=2, sticky=NW)
-        self.configRoot.backgroundFrame.blackRadioButton = Radiobutton(self.configRoot.backgroundFrame,
-                                                                       text='使用黑色背景',
-                                                                       font=ft,
-                                                                       variable=self.backIntV,
-                                                                       value=1)
-        self.configRoot.backgroundFrame.blackRadioButton.grid(row=1, columnspan=2, sticky=NW)
-        self.configRoot.backgroundFrame.customRadioButton = Radiobutton(self.configRoot.backgroundFrame,
-                                                                       text='使用自定义颜色',
-                                                                       font=ft,
-                                                                       variable=self.backIntV,
-                                                                       value=2)
-        self.configRoot.backgroundFrame.customRadioButton.grid(row=2, columnspan=2, sticky=NW)
+        self.initBackgroundChoice(self.configRoot)
+        self.initFile(self.configRoot)
+        self.initOther(self.configRoot)
 
-        self.backIntV.set(2)
+        self.configRoot.cancelButton = Button(self.configRoot, text='取消', command=self.clickCancel)
+        self.configRoot.cancelButton.place(x=305, y=280, width=70, height=30)
+        self.configRoot.cancelButton = Button(self.configRoot, text='确认', command=self.clickOk)
+        self.configRoot.cancelButton.place(x=395, y=280, width=70, height=30)
+
         self.configRoot.mainloop()
+
+    def clickCancel(self):
+        if callable(self.command):
+            self.command(None)
+        self.configRoot.destroy()
+
+    def clickOk(self):
+        t_b = self.backIntV.get()
+        if t_b == 0:
+            self.configData.background = '#d3d3d3'
+        elif t_b == 1:
+            self.configData.background = '#000000'
+        elif t_b == 2:
+            self.configData.background = self.customBackground
+        self.configData.customBackground = self.customBackground
+        self.configData.restore = bool(self.restore.get())
+        self.configData.saveLatelyFileInfo = bool(self.saveLatelyFileInfo.get())
+        self.configData.scanSubFile = bool(self.scanSubFile.get())
+        self.configData.scanSubFileDepth = self.scanSubFileDepth.get()
+        self.configData.useCache = bool(self.useCache.get())
+        self.configData.slideTime = self.slideTime.get()
+        self.configData.saveFilePassword = bool(self.saveFilePassword.get())
+        self.configData.useCustomSort = bool(self.useCustomSort.get())
+        self.configData.scaleMode = self.scaleModeList.index(self.scaleMode.get())
+        if callable(self.command):
+            self.command(self.configData)
+        self.configRoot.destroy()
+
+    def initBackgroundChoice(self, master):
+        master.backgroundFrame = LabelFrame(master, text='背景', font=self.ft)
+        master.backgroundFrame.place(x=20, y=10, width=220, height=150, anchor=NW)
+        self.backIntV = IntVar()
+        if self.configData.background == '#d3d3d3':
+            self.backIntV.set(0)
+            self.customBackground = '#ffffff'
+        elif self.configData.background == '#000000':
+            self.backIntV.set(1)
+            self.customBackground = '#ffffff'
+        else:
+            self.customBackground = self.configData.background
+            self.backIntV.set(2)
+
+        master.backgroundFrame.lightRadioButton = Radiobutton(master.backgroundFrame,
+                                                              text='使用灰色背景',
+                                                              font=self.ft,
+                                                              variable=self.backIntV,
+                                                              value=0)
+        master.backgroundFrame.lightRadioButton.grid(columnspan=2, sticky=NW)
+        master.backgroundFrame.blackRadioButton = Radiobutton(master.backgroundFrame,
+                                                              text='使用黑色背景',
+                                                              font=self.ft,
+                                                              variable=self.backIntV,
+                                                              value=1)
+        master.backgroundFrame.blackRadioButton.grid(row=1, columnspan=2, sticky=NW)
+        master.backgroundFrame.customRadioButton = Radiobutton(master.backgroundFrame,
+                                                               text='使用自定义颜色',
+                                                               font=self.ft,
+                                                               variable=self.backIntV,
+                                                               value=2)
+        master.backgroundFrame.customRadioButton.grid(row=2, sticky=NW, pady=4)
+        master.backgroundFrame.colorChoiceButton = Button(master.backgroundFrame,
+                                                          width=6,
+                                                          command=self.choiceColor)
+        master.backgroundFrame.colorChoiceButton.grid(row=2, column=1, sticky=NW, padx=10)
+        master.backgroundFrame.colorChoiceButton.colorLabel = Label(master.backgroundFrame.colorChoiceButton,
+                                                                    bg=self.customBackground)
+        master.backgroundFrame.colorChoiceButton.colorLabel.place(x=-1,
+                                                                  y=-1,
+                                                                  relx=0.5,
+                                                                  rely=0.5,
+                                                                  anchor=CENTER,
+                                                                  relheight=0.8,
+                                                                  relwidth=0.8)
+        master.backgroundFrame.colorChoiceButton.colorLabel.bind('<Button-1>', self.choiceColor)
+
+    def choiceColor(self, *args):
+        self.configRoot.wm_attributes('-topmost', 0)
+        color_w = colorchooser.Chooser(master=self.configRoot,initialcolor=self.configData.background)
+        c = color_w.show()[1]
+        self.configRoot.backgroundFrame.colorChoiceButton.colorLabel['bg'] = c
+        self.customBackground = c
+        self.configRoot.wm_attributes('-topmost', 0.5)
+
+    def initFile(self, master):
+        master.fileFrame = LabelFrame(master, text='文件', font=self.ft)
+        master.fileFrame.place(x=260, y=10, width=220, height=150, anchor=NW)
+
+        self.restore = IntVar()
+        self.restore.set(self.configData.restore)
+        master.fileFrame.restoreCheckButton = Checkbutton(master.fileFrame,
+                                                                text='启动时恢复上次浏览',
+                                                                font=self.ft,
+                                                                variable=self.restore)
+        master.fileFrame.restoreCheckButton.grid(sticky=NW)
+
+        self.saveLatelyFileInfo = IntVar()
+        self.saveLatelyFileInfo.set(self.configData.saveLatelyFileInfo)
+        master.fileFrame.saveLatelyCheckButton = Checkbutton(master.fileFrame,
+                                                                   text='保存最近文件信息',
+                                                                   font=self.ft,
+                                                                   variable=self.saveLatelyFileInfo)
+        master.fileFrame.saveLatelyCheckButton.grid(row=1, sticky=NW)
+
+        self.scanSubFile = IntVar()
+        self.scanSubFile.set(self.configData.scanSubFile)
+        master.fileFrame.scanSubFileCheckButton = Checkbutton(master.fileFrame,
+                                                                    text='扫描子文件夹',
+                                                                    font=self.ft,
+                                                                    variable=self.scanSubFile)
+        master.fileFrame.scanSubFileCheckButton.grid(row=2, sticky=NW)
+
+        master.fileFrame.scanSubFileDepthLabel = Label(master.fileFrame,
+                                                             text='扫描扫描深度(-1为无限制)',
+                                                             font=self.ft)
+        master.fileFrame.scanSubFileDepthLabel.grid(row=3, sticky=NW, padx=30)
+        self.scanSubFileDepth = IntVar()
+        self.scanSubFileDepth.set(self.configData.scanSubFileDepth)
+        master.fileFrame.scanSubFileDepthSpinbox = Spinbox(master.fileFrame,
+                                                                 from_=-1,
+                                                                 to=99,
+                                                                 increment=1,
+                                                                 textvariable=self.scanSubFileDepth,)
+        master.fileFrame.scanSubFileDepthSpinbox.grid(row=4, sticky=NW, padx=30)
+        master.fileFrame.scanSubFileDepthSpinbox.bind('<Return>', self.inputDepth)
+
+    def inputDepth(self, *args):
+        try:
+            depth = int(self.scanSubFileDepth.get())
+            if depth > 99:
+                raise Exception
+            elif depth < -1:
+                raise Exception
+            self.configData.scanSubFileDepth = depth
+        except:
+            self.scanSubFileDepth.set(self.configData.scanSubFileDepth)
+
+    def initOther(self, master):
+        master.otherFrame = LabelFrame(master, text='杂项', font=self.ft)
+        master.otherFrame.place(x=20, y=170, width=460, height=100, anchor=NW)
+
+        self.saveFilePassword = IntVar()
+        self.saveFilePassword.set(self.configData.saveFilePassword)
+        master.otherFrame.saveFilePasswordCheckButton = Checkbutton(master.otherFrame,
+                                                                    text='保存文件密码',
+                                                                    font=self.ft,
+                                                                    variable=self.saveFilePassword)
+        master.otherFrame.saveFilePasswordCheckButton.place(relx=0, rely=0, anchor=NW)
+
+        self.useCache = IntVar()
+        self.useCache.set(self.configData.useCache)
+        master.otherFrame.useCacheCheckButton = Checkbutton(master.otherFrame,
+                                                            text='启用缓存',
+                                                            font=self.ft,
+                                                            variable=self.useCache)
+        master.otherFrame.useCacheCheckButton.place(relx=0, rely=0.3, anchor=NW)
+
+        self.useCustomSort = IntVar()
+        self.useCustomSort.set(self.configData.useCustomSort)
+        master.otherFrame.useCustomSortCheckButton = Checkbutton(master.otherFrame,
+                                                                 text='使用专有排序规则',
+                                                                 font=self.ft,
+                                                                 variable=self.useCustomSort)
+        master.otherFrame.useCustomSortCheckButton.place(relx=0, rely=0.6, anchor=NW)
+
+        master.otherFrame.slideTimeLabel = Label(master.otherFrame,
+                                                 text='幻灯片延时',
+                                                 font=self.ft)
+        master.otherFrame.slideTimeLabel.place(relx=0.45, rely=0, anchor=NW)
+        self.slideTime = IntVar()
+        self.slideTime.set(self.configData.slideTime)
+        master.otherFrame.slideTimeSpinbox = Spinbox(master.otherFrame,
+                                                     from_=1,
+                                                     to=20,
+                                                     increment=1,
+                                                     textvariable=self.slideTime)
+        master.otherFrame.slideTimeSpinbox.place(relx=0.67, rely=0, relwidth=0.3, anchor=NW)
+        master.otherFrame.slideTimeSpinbox.bind('<Return>', self.inputSlide)
+
+        master.otherFrame.scaleModeLabel = Label(master.otherFrame,
+                                                 text='图像放大方式',
+                                                 font=self.ft)
+        master.otherFrame.scaleModeLabel.place(relx=0.45, rely=0.4, anchor=NW)
+        self.scaleMode = StringVar()
+        self.scaleMode.set(self.scaleModeList[self.configData.scaleMode])
+        master.otherFrame.scaleModeOptionMenu = OptionMenu(*(master.otherFrame, self.scaleMode) + tuple(self.scaleModeList))
+        master.otherFrame.scaleModeOptionMenu.place(relx=0.668, rely=0.38, relwidth=0.301, relheight=0.35, anchor=NW)
+
+    def inputSlide(self, *args):
+        try:
+            slideTime = int(self.slideTime.get())
+            if slideTime > 20:
+                raise Exception
+            elif slideTime < 1:
+                raise Exception
+            self.configData.slideTime = slideTime
+        except:
+            self.slideTime.set(self.configData.slideTime)
+
