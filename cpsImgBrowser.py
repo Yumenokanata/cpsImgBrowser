@@ -809,17 +809,20 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while not pwd:
+                    while pwd == '':
                         if PLATFORM == 'Windows':
                             label.configure(image="")
                             label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
-                            print("Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            print("Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
                             pwd = input('请输入密码: ')
                             sys.stdout.flush()
                         else:
-                            pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            t_root = tk.Tk()
+                            t_root.withdraw()
+                            pwd = askstring(parent=t_root, title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            t_root.destroy()
                     label['text'] = "Loading"
-                    if pwd == "skip":
+                    if pwd == "skip" or pwd == None:
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
                     try:
@@ -896,7 +899,7 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while not pwd:
+                    while pwd == '':
                         if PLATFORM == 'Windows':
                             label.configure(image="")
                             label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
@@ -904,9 +907,12 @@ class guardTh(threading.Thread):
                             pwd = input('请输入密码: ')
                             sys.stdout.flush()
                         else:
-                            pwd = askstring(title='请输入密码', prompt="Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            t_root = tk.Tk()
+                            t_root.withdraw()
+                            pwd = askstring(parent=t_root, title='请输入密码', prompt="Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                            t_root.destroy()
                     label['text'] = "Loading"
-                    if pwd == "skip":
+                    if pwd == "skip" or pwd == None:
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
                     try:
@@ -1099,72 +1105,34 @@ def showInfoOfFile():
     t_size = ("%.1f"%(t_size)) + l[n]
 
     filenameTitleString = '文件名:'
-    title1String = '类型:'
-    title1String += '\n大小:'
-    title1String += '\n图片数:'
+    title1String = '类型:\n大小:\n图片数:'
     uriTitleString = '所在位置:'
-    title2String = '访问日期:'
-    title2String += '\n修改日期:'
-    title2String += '\n创建日期:'
+    title2String = '访问日期:\n修改日期:\n创建日期:'
 
-    info1String = t_class
-    info1String += '\n' + t_size
-    info1String += '\n' + str(t_info['imgNum'])
+    info1String = t_class + '\n' + t_size + '\n' + str(t_info['imgNum'])
     info2String = time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(a_time))
     info2String += '\n' + time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(m_time))
     info2String += '\n' + time.strftime('%Y年%m月%d日%H时%M分%S秒', time.localtime(c_time))
 
     ft = Font(family='Fixdsys', size=10)
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=filenameTitleString,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=filenameTitleString, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=0, column=0, sticky=NW, padx=20, pady=10)
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=t_filename,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=t_filename, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=0, column=1, sticky=NW, pady=10)
 
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=title1String,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=title1String, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=1, column=0, sticky=NW, padx=20)
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=info1String,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=info1String, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=1, column=1, sticky=NW)
 
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=uriTitleString,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=uriTitleString, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=2, column=0, sticky=NW, padx=20)
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=t_uri,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=t_uri, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=2, column=1, sticky=NW)
 
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=title2String,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=title2String, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=3, column=0, sticky=NW, padx=20)
-    root.showInfoWin.infoLabel = Label(root.showInfoWin,
-                                       wraplength=270,
-                                       text=info2String,
-                                       font=ft,
-                                       justify=LEFT)
+    root.showInfoWin.infoLabel = Label(root.showInfoWin, wraplength=270, text=info2String, font=ft, justify=LEFT)
     root.showInfoWin.infoLabel.grid(row=3, column=1, sticky=NW)
 
     root.showInfoWin.mainloop()
@@ -1250,7 +1218,7 @@ def initMessage(master):
     master.messageLabel = Label(master, bg='white')
     master.messageLabel.place(relx=0, rely=1, height=MESSAGE_BAR_HEIGHT, relwidth=1, anchor=SW)
     ImgNameVar = StringVar()
-    master.messageLabel.infoImgNameMessage = tkinter.Message(master.messageLabel, aspect=2000, textvariable=ImgNameVar, justify=LEFT)
+    master.messageLabel.infoImgNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=ImgNameVar, justify=LEFT)
     master.messageLabel.infoImgNameMessage.place(in_=master.messageLabel,
                                                  relx=0, rely=0,
                                                  relheight=1,
@@ -1272,7 +1240,7 @@ def initMessage(master):
                                                  relwidth=MESSAGE_BAR_FILE_NUM_WIDTH - 0.001,
                                                  anchor=NW)
     FileNameVar = StringVar()
-    master.messageLabel.infoFileNameMessage = tkinter.Message(master.messageLabel, aspect=2000, textvariable=FileNameVar, justify=RIGHT)
+    master.messageLabel.infoFileNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=FileNameVar, justify=RIGHT)
     master.messageLabel.infoFileNameMessage.place(in_=master.messageLabel,
                                                   relx=0.6, rely=0,
                                                   relheight=1,
@@ -1439,15 +1407,6 @@ def onKeyPress(ev):
         changeFile(NEXT_FILE)
     elif ev.keycode == KEY_CODE.codeA or ev.keycode == KEY_CODE.codeUp:
         changeFile(BACK_FILE)
-    elif ev.keycode == KEY_CODE.codeP:
-        global SLIDE_TIME
-        t_slide_time = askstring(title='设置幻灯片时间', prompt="当前时间: %ds" % (SLIDE_TIME))
-        try:
-            t_slide_time = int(t_slide_time)
-            SLIDE_TIME = max([1, t_slide_time])
-        except:
-            print("输入错误")
-            # showerror(title="错误", message="输入错误！")
     elif ev.keycode == KEY_CODE.codeW:
         jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
         try:
