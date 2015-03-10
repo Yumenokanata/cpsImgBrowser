@@ -638,17 +638,13 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while not pwd:
-                        if PLATFORM == 'Windows':
-                            label.configure(image="")
-                            label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
-                            print("Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
-                            pwd = input('请输入密码: ')
-                            sys.stdout.flush()
-                        else:
-                            pwd = askstring(title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    while pwd == '':
+                        t_root = tk.Tk()
+                        t_root.withdraw()
+                        pwd = askstring(parent=t_root, title='请输入密码', prompt="Zip File: " + _filename + "\n输入\"skip\"跳过此文件")
+                        t_root.destroy()
                     label['text'] = "Loading"
-                    if pwd == "skip":
+                    if pwd == "skip" or pwd == None:
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
                     try:
@@ -724,17 +720,13 @@ class guardTh(threading.Thread):
                             pass
                 while not has_pwd:
                     pwd = _NONE
-                    while not pwd:
-                        if PLATFORM == 'Windows':
-                            label.configure(image="")
-                            label['text'] = "正在打开加密压缩文件：" + _filename + "\n请在命令行中按提示输入密码\n输入\"skip\"跳过此文件"
-                            print("Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
-                            pwd = input('请输入密码: ')
-                            sys.stdout.flush()
-                        else:
-                            pwd = askstring(title='请输入密码', prompt="Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                    while pwd == '':
+                        t_root = tk.Tk()
+                        t_root.withdraw()
+                        pwd = askstring(parent=t_root, title='请输入密码', prompt="Rar File: " + _filename + "\n输入\"skip\"跳过此文件")
+                        t_root.destroy()
                     label['text'] = "Loading"
-                    if pwd == "skip":
+                    if pwd == "skip" or pwd == None:
                         PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
                         return False
                     try:
