@@ -9,6 +9,7 @@ import os
 import rarfile
 import hashlib
 import threading
+import copy
 import time
 import zipfile
 import random
@@ -698,6 +699,31 @@ class guardTh(threading.Thread):
         t_pwd_json = json.dumps(PWD_JSON)
         with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
             f.write(t_pwd_json)
+
+        global mConfigData
+        if mConfigData.saveLatelyFileInfo:
+            try:
+                i = mConfigData.latelyFileInfo.index({'filename': filename,
+                                                      'uri': file_uri})
+                t_info = mConfigData.latelyFileInfo.pop(i)
+                mConfigData.latelyFileInfo.insert(0, t_info)
+            except:
+                if len(mConfigData.latelyFileInfo) > 10:
+                    mConfigData.latelyFileInfo.pop(-1)
+                mConfigData.latelyFileInfo.insert(0, {'filename': filename,
+                                                      'uri': file_uri})
+            global latelyMenu
+            latelyMenu.delete(0, END)
+            t_len = len(mConfigData.latelyFileInfo)
+            if t_len > 0:
+                latelyMenu.add_command(label=mConfigData.latelyFileInfo[0]['filename'], command=lambda: openLatelyFile(0))
+            if t_len > 1:
+                latelyMenu.add_command(label=mConfigData.latelyFileInfo[1]['filename'], command=lambda: openLatelyFile(1))
+            if t_len > 2:
+                latelyMenu.add_command(label=mConfigData.latelyFileInfo[2]['filename'], command=lambda: openLatelyFile(2))
+            if t_len > 3:
+                latelyMenu.add_command(label=mConfigData.latelyFileInfo[3]['filename'], command=lambda: openLatelyFile(3))
+
         self.nowFileInfo.File = return_fruit
         self.nowFileInfo.FilePos = file_pos
 
@@ -958,6 +984,7 @@ def fileDialog(master, MODE):
     global nowFilePath
     openFileDialog(master, command=changeFileFromDialog, startPath=nowFilePath)
 
+# TODO
 def rotateImg(MODE):
     print(MODE)
 
@@ -999,12 +1026,24 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
         showwarning(title="对不起", message="该文件夹下没有可用文件")
         label['text'] = "No File"
 
+def openLatelyFile(*args):
+    global mConfigData
+    info = mConfigData.latelyFileInfo[args[0]]
+    changeFileFromDialog(path=info['uri'], filename=info['filename'])
+    pass
+
+def cleanLatelyFileData():
+    global latelyMenu
+    global mConfigData
+    latelyMenu.delete(0, END)
+    mConfigData.latelyFileInfo = []
+
 def initMenu(master):
     global mTwoViewMode
+    global mConfigData
     master.menu = Menu(master)
 
     master.menu.filemenu = Menu(master)
-    master.menu.filemenu.s_submenu = Menu(master)
     master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
     master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
     master.menu.filemenu.add_command(label="管理收藏库...", command=fileDialog)
@@ -1013,9 +1052,11 @@ def initMenu(master):
     master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
     master.menu.filemenu.add_command(label="首选项...", command=config)
     master.menu.filemenu.add_separator()
+    master.menu.filemenu.s_submenu = Menu(master)
     master.menu.filemenu.add_cascade(label='打开最近', menu=master.menu.filemenu.s_submenu)
-    master.menu.filemenu.s_submenu.add_command(label="清空最近")
-    master.menu.filemenu.s_submenu.add_separator()
+    master.menu.filemenu.add_command(label="清空最近", command=cleanLatelyFileData)
+    global latelyMenu
+    latelyMenu = master.menu.filemenu.s_submenu
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_command(label="退出", command=fileDialog)
 
@@ -1364,7 +1405,7 @@ def closeWin():
         changeImgLock.release()
         ChangeFileLock.release()
 
-        saveConfigToFile(mConfigData)
+    saveConfigToFile(mConfigData)
 
     root.destroy()
 
@@ -1435,7 +1476,6 @@ if __name__ == '__main__':
             guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
         except:
             guardTask.nowFilePos = 0
-
     elif mConfigData.restore and mConfigData.restoreData['filename']:
         t_path = mConfigData.restoreData['uri']
         t_imgPos = mConfigData.restoreData['imgPos']

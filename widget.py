@@ -628,8 +628,12 @@ class configDialog():
         self.configRoot = Toplevel(master)
         self.configRoot.wm_attributes('-topmost', 0.5)
         self.configRoot.wm_resizable(width=False, height=False)
-        t_screen_width, t_screen_height = master.maxsize()
-        self.configRoot.geometry("500x320+%d+%d" % ((t_screen_width - 800) / 2, (t_screen_height - 600) / 2))
+        s_x = master.winfo_x()
+        s_y = master.winfo_y()
+        t = master.winfo_geometry()
+        win_w = int(t.split('x')[0])
+        win_h = int(t.split('x')[1].split('+')[0])
+        self.configRoot.geometry("500x320+%d+%d" % ((win_w - 500) / 2 + s_x, (win_h - 450) / 2 + s_y))
 
         self.initBackgroundChoice(self.configRoot)
         self.initFile(self.configRoot)
@@ -839,3 +843,22 @@ class configDialog():
         except:
             self.slideTime.set(self.configData.slideTime)
 
+def myAskString(master, title, message):
+    import threading
+    t_Lock = threading.Lock()
+
+
+
+class _myDialog():
+    def __init__(self, master, Lock, title, message):
+        Lock.ac
+        self.root = tkinter.Tk()
+        self.root.wm_attributes('-topmost', 1)
+        s_x = master.winfo_x()
+        s_y = master.winfo_y()
+        t = master.winfo_geometry()
+        win_w = int(t.split('x')[0])
+        win_h = int(t.split('x')[1].split('+')[0])
+        self.root.geometry("200x100+%d+%d" % ((win_w - 200) / 2 + s_x, (win_h - 100) / 2 + s_y))
+
+        self.root.title(title)
