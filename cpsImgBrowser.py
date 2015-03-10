@@ -198,7 +198,7 @@ class guardTh(threading.Thread):
         global FILE_LIST
         global root
         global label
-        global mFilePos
+        global mNowFileInfo
         global mImgPos
         global InfoMessage
 
@@ -213,6 +213,8 @@ class guardTh(threading.Thread):
                 if not FILE_LIST:
                     self.nowFileInfo.FilePos = -1
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
+                    mNowFileInfo['filename'] = ''
+                    mNowFileInfo['uri'] = ''
                     ChangeFileLock.release()
                     InfoMessage[IMG_NAME_MESSAGE].set('')
                     InfoMessage[IMG_NUM_MESSAGE].set('')
@@ -241,7 +243,7 @@ class guardTh(threading.Thread):
                 else:
                     if not t_direct is CHANGE_FILE:
                         FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
-                    self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
+                    self.nowShowImgPos = 0
                     if t_direct is JUMP_FILE:
                         self.nowFileInfo.FilePos = ChangeFileFlag["nowFilePos"]
                     if t_direct is CHANGE_FILE:
@@ -260,6 +262,10 @@ class guardTh(threading.Thread):
                     else:
                         t_file_class = CPS_CLASS
                         self.imgList = self.getImageList(self.nowFileInfo.File)
+                    if not self.nowShowImgPos:
+                        self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
+                    mNowFileInfo['filename'] = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
+                    mNowFileInfo['uri'] = FILE_LIST[self.nowFileInfo.FilePos]["fileUri"]
 
                     # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                     # print("Load File Time: " + str(time.time() - st1))
@@ -1139,13 +1145,14 @@ def saveConfigToFile(config_data):
 def slide():
     # print ("slide")
     global slideLock
+    global mConfigData
     while(True):
         slideLock.acquire()
         checkTmp = SLIDE_START
         slideLock.release()
         if checkTmp:
             ShowPic(NEXT_IMG)
-            time.sleep(SLIDE_TIME)
+            time.sleep(mConfigData.slideTime)
         else:
             break
 
@@ -1342,10 +1349,24 @@ def closeWin():
     global FILE_LIST
     global root
     global label
-    global mFilePos
+    global mNowFileInfo
     global mImgPos
     global InfoMessage
-    
+    global mConfigData
+    if mConfigData.restore:
+        mImgLoadQueueLock.acquire()
+        changeImgLock.acquire()
+        ChangeFileLock.acquire()
+        mConfigData.restoreData['filename'] = mNowFileInfo['filename']
+        mConfigData.restoreData['uri'] = mNowFileInfo['uri']
+        mConfigData.restoreData['imgPos'] = mImgPos
+        mImgLoadQueueLock.release()
+        changeImgLock.release()
+        ChangeFileLock.release()
+
+        saveConfigToFile(mConfigData)
+
+    root.destroy()
 
 '''入口'''
 if __name__ == '__main__':
@@ -1383,6 +1404,7 @@ if __name__ == '__main__':
     mImgPos = 0
     FILE_LIST = []
     ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE, 'imgPos': 0}
+    mNowFileInfo = {'filename': '', 'uri': '', 'imgPos': 0}
     RandomLoadImgFlag = False
     willLoadImgQueue = _NONE
 
