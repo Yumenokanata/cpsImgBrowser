@@ -43,8 +43,6 @@ CHANGE_FILE = 4
 
 BAD_FILE = "bad_file"
 
-ANTIALIAS_SHOW_IMG = False
-
 CPS_CLASS = 0
 FILE_CLASS = 1
 
@@ -181,6 +179,7 @@ class guardTh(threading.Thread):
         self.imgNum = 0
         self.shouldLoadImg = False
         self.shouldRefreshImg = False
+        self.live = True
 
     class _now_file_info():
         def __init__(self, pos=-1, filename=_NONE, file=_NONE, _class=CPS_CLASS):
@@ -188,6 +187,9 @@ class guardTh(threading.Thread):
             self.Filename = filename
             self.File = file
             self.FileClass = _class
+
+    def finish(self):
+        self.live = False
 
     def run(self):
         global mImgLoadQueueLock
@@ -206,7 +208,7 @@ class guardTh(threading.Thread):
         global nTime
         nTime = time.time()
 
-        while TRUE:
+        while self.live:
             time.sleep(0.08)
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
@@ -387,15 +389,17 @@ class guardTh(threading.Thread):
                 mImgLoadQueueLock.release()
 
     def addQueue(self, start_pos):
+        global mConfigData
         willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[start_pos],
                                                  "imgPos": start_pos}]
-        list_num = len(self.imgList)
-        for i in range(min([30, list_num])):
-            t_nextLoadImgPos = (start_pos + i) % list_num
-            willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                         "imgPos": t_nextLoadImgPos})
-            t_nextLoadImgPos = (start_pos - i) % list_num
-            willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+        if mConfigData.useCache:
+            list_num = len(self.imgList)
+            for i in range(min([30, list_num])):
+                t_nextLoadImgPos = (start_pos + i) % list_num
+                willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                             "imgPos": t_nextLoadImgPos})
+                t_nextLoadImgPos = (start_pos - i) % list_num
+                willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                          "imgPos": t_nextLoadImgPos})
 
     def getStringMD5(self, string):
@@ -411,16 +415,14 @@ class guardTh(threading.Thread):
         return md5
 
     def resizePic(self, w, h, rw, rh, pil_image):
+        global mConfigData
         f1 = 1.0 * rw / w
         f2 = 1.0 * rh / h
         factor = min([f1, f2])
         width = int(w * factor)
         height = int(h * factor)
         try:
-            if ANTIALIAS_SHOW_IMG:
-                return pil_image.resize((width, height), PIL.Image.ANTIALIAS)
-            else:
-                return pil_image.resize((width, height))
+            return pil_image.resize((width, height), mConfigData.scaleMode)
         except:
             return BAD_FILE
 
@@ -433,7 +435,6 @@ class guardTh(threading.Thread):
                           if (fn[-3:].lower() == 'jpg'
                               or fn[-3:].lower() == 'png'
                               or fn[-3:].lower() == 'gif')]
-            # TODO use uri to key
         else:
             t_img_list = [info for info in cps.infolist()
                        if(info.filename[-3:].lower() == 'jpg'
@@ -444,8 +445,12 @@ class guardTh(threading.Thread):
         divide_list = self.divideByFile(t_img_list, key=lambda x: x.filename)
         divide_list.sort(key=lambda x: x[0])
         t_img_list = []
+        global mConfigData
         for t_l in divide_list:
-            t_img_list += self.sortFileName(t_l[1], key=lambda x: x.filename)
+            if mConfigData.useCustomSort:
+                t_img_list += self.sortFileName(t_l[1], key=lambda x: x.filename)
+            else:
+                t_img_list += sorted(t_l[1], key=lambda x: x.filename)
         # print("Sort Time: %f / %d" % (time.time() - st4, len(t_img_list)))
         return t_img_list
 
@@ -696,11 +701,12 @@ class guardTh(threading.Thread):
             elif filename[-3:].lower() == 'zip':
                 return_fruit = self.openZipFile(file_pos)
 
-        t_pwd_json = json.dumps(PWD_JSON)
-        with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
-            f.write(t_pwd_json)
-
         global mConfigData
+        if mConfigData.saveFilePassword:
+            t_pwd_json = json.dumps(PWD_JSON)
+            with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
+                f.write(t_pwd_json)
+
         if mConfigData.saveLatelyFileInfo:
             try:
                 i = mConfigData.latelyFileInfo.index({'filename': filename,
@@ -921,12 +927,16 @@ class loadImgTh(threading.Thread):
         self.nowLoadImgInfo = {}
         self.cpsFile = _NONE
         self.fileClass = CPS_CLASS
+        self.live = True
+
+    def finish(self):
+        self.live = False
 
     def run(self):
         global willLoadImgQueue
         global mImgLoadQueueLock
 
-        while TRUE:
+        while self.live:
             time.sleep(0.05)
             if not willLoadImgQueue:
                 continue
@@ -1007,7 +1017,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
             t_file_name = nowFilePath.split(FILE_SIGN)[-1]
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
-    t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
+    t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile, depth=mConfigData.scanSubFileDepth)
 
     t_nowFilePos = 0
     for i,l in enumerate(t_file_list):
@@ -1038,6 +1048,12 @@ def cleanLatelyFileData():
     latelyMenu.delete(0, END)
     mConfigData.latelyFileInfo = []
 
+# TODO 失败品
+def testMyAskString():
+    s = myAskString(root, '测试', '这是测试信息')
+    print('testMyAskString')
+    print('returnData: ', s)
+
 def initMenu(master):
     global mTwoViewMode
     global mConfigData
@@ -1046,7 +1062,7 @@ def initMenu(master):
     master.menu.filemenu = Menu(master)
     master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
     master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
-    master.menu.filemenu.add_command(label="管理收藏库...", command=fileDialog)
+    master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_command(label="文件属性...", command=fileDialog)
     master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
@@ -1332,14 +1348,6 @@ def onKeyPress(ev):
         if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
             jump_num = random.randint(0, len(FILE_LIST))
             changeFile(JUMP_FILE, jump_file=jump_num)
-    elif ev.keycode == KEY_CODE.codeO:
-        global ANTIALIAS_SHOW_IMG
-        if ANTIALIAS_SHOW_IMG:
-            if askquestion(title="抗锯齿", message="是否关闭抗锯齿?") == YES:
-                ANTIALIAS_SHOW_IMG = False
-        else:
-            if askquestion(title="抗锯齿", message="是否开启抗锯齿?") == YES:
-                ANTIALIAS_SHOW_IMG = True
     elif ev.keycode == KEY_CODE.codeM:
         if mConfigData.defaultPassword:
             dpw = mConfigData.defaultPassword[0]
@@ -1384,16 +1392,10 @@ def closeWin():
     global mImgLoadQueueLock
     global changeImgLock
     global ChangeFileLock
-    global ChangeFileFlag
-    global RandomLoadImgFlag
-    global willLoadImgQueue
-    global FILE_LIST
-    global root
-    global label
-    global mNowFileInfo
-    global mImgPos
-    global InfoMessage
     global mConfigData
+    global guardTask
+    global loadTask
+
     if mConfigData.restore:
         mImgLoadQueueLock.acquire()
         changeImgLock.acquire()
@@ -1407,6 +1409,10 @@ def closeWin():
 
     saveConfigToFile(mConfigData)
 
+    guardTask.finish()
+    loadTask.finish()
+    while guardTask.isAlive() or loadTask.isAlive():
+        time.sleep(0.5)
     root.destroy()
 
 '''入口'''

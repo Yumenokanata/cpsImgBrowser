@@ -610,12 +610,6 @@ class openFileDialog():
         self.uriV.set(self.nowFilePath)
         self.refreshFileListBox(self.nowFilePath)
 
-NONE = 0
-NEAREST = 0
-ANTIALIAS = 1
-LINEAR = 2
-CUBIC = 3
-
 class configDialog():
     def __init__(self, master, command=None, oldConfig=None):
         self.scaleModeList = ['最近邻插值',
@@ -843,22 +837,52 @@ class configDialog():
         except:
             self.slideTime.set(self.configData.slideTime)
 
+# TODO:机制测试失败
 def myAskString(master, title, message):
     import threading
     t_Lock = threading.Lock()
-
-
+    t_d = _myDialog(master, Lock=t_Lock, title=title, message=message)
+    t_Lock.acquire()
+    returnData = t_d.returnData
+    t_Lock.release()
+    return returnData
 
 class _myDialog():
     def __init__(self, master, Lock, title, message):
-        Lock.ac
+        self.Lock = Lock
+        self.Lock.acquire()
         self.root = tkinter.Tk()
         self.root.wm_attributes('-topmost', 1)
+        self.returnData = None
+        self.root.protocol('WM_DELETE_WINDOW', self.closeWinWhenCancel)
+        self.root.bind('<Return>', self.colseWinWhenOK)
+        self.root.wm_resizable(height=False)
         s_x = master.winfo_x()
         s_y = master.winfo_y()
         t = master.winfo_geometry()
         win_w = int(t.split('x')[0])
         win_h = int(t.split('x')[1].split('+')[0])
-        self.root.geometry("200x100+%d+%d" % ((win_w - 200) / 2 + s_x, (win_h - 100) / 2 + s_y))
+        self.root.geometry("200x150+%d+%d" % ((win_w - 200) / 2 + s_x, (win_h - 150) / 2 + s_y))
 
         self.root.title(title)
+        self.root.messageLabel = Label(self.root, text=message)
+        self.root.messageLabel.place(relx=0, rely=0, x=20, relwidth=0.9, height=30, anchor=NW)
+
+        self.callbackData = StringVar()
+        self.root.inputEntry = Entry(self.root, textvariable=self.callbackData, width=30)
+        self.root.inputEntry.place(relx=0, rely=0.3, x=20, relwidth=0.9, height=30, anchor=NW)
+
+        self.root.cancelButton = Button(self.root, text='取消', command=self.closeWinWhenCancel)
+        self.root.cancelButton.place(relx=1, rely=1, x=-90, y=-10, width=70, height=30, anchor=SE)
+        self.root.cancelButton = Button(self.root, text='确认', command=self.closeWinWhenCancel)
+        self.root.cancelButton.place(relx=1, rely=1, x=-40, y=-10, width=70, height=30, anchor=SE)
+        self.root.mainloop()
+        self.closeWinWhenCancel()
+
+    def closeWinWhenCancel(self):
+        self.root.destroy()
+        self.Lock.release()
+
+    def colseWinWhenOK(self):
+        self.returnData = self.callbackData.get()
+        self.closeWinWhenCancel()
