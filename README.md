@@ -26,21 +26,22 @@
         $ pip install rarfile   
         $ pip install pillow   
     3. 然后就可以双击py文件运行了
-* 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令:    
+* 需要安装python3的pillow、tkinter和rarfile库(tkinter自带)，ubuntu下可依次输入以下命令:    
     $ sudo apt-get install python3-pil      
     $ sudo apt-get install python3-tk   
     **$ sudo apt-get install python3-pil.imagetk**  
     $ sudo apt-get install python3-pip      
     $ sudo pip install rarfile  
+* **_NEW_** 非ubuntu系统也只需要通过pip安装pillow和rarfile模块即可
 * 现大部分的卡顿在于图片文件的载入和重绘，也就是zipfile的read函数和tk界面绘制：   
 按键事件->轮询响应事件(0.0001s ~ 0.0002s)->载入图片(0.5s ~ 12s)->显示(0.4s ~ 1.0s)    
 **现已加入抗锯齿手动设置，默认为无抗锯齿，开启和关闭抗锯齿载入时间相差0.7s ~ 10s**
 * 任何按键都会终止幻灯片，但鼠标**点击切换图片**不会使幻灯片终止
 
 ###使用说明：
-* ubuntu下使用  
+* Linux下使用  
         $ python3 ./cpsImgBrowser.py  
-打开
+打开，win下直接双击
 * 进入后首先需输入指定需要浏览的压缩包们所在的<u>**文件夹地址**</u>
 * 开始浏览图片后的操作：  
         左： 上一张  
