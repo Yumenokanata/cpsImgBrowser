@@ -69,6 +69,10 @@ ANTIALIAS = 1
 LINEAR = 2
 CUBIC = 3
 
+SCALE_FIT_MODE_BOTH = 0
+SCALE_FIT_MODE_WIDTH = 1
+SCALE_FIT_MODE_HEIGHT = 2
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -122,7 +126,8 @@ class _configData():
                  saveFilePassword=True,
                  useCustomSort=True,
                  scaleMode=NEAREST,
-                 twoPageMode=False):
+                 twoPageMode=False,
+                 scaleFitMode=0):
         self.background = background
         self.customBackground = customBackground
         self.restore = restore
@@ -138,6 +143,7 @@ class _configData():
         self.useCustomSort = useCustomSort
         self.scaleMode = scaleMode
         self.twoPageMode = twoPageMode
+        self.scaleFitMode = scaleFitMode
 
     def getDataDict(self):
         return {'background': self.background,
@@ -154,7 +160,8 @@ class _configData():
                 'saveFilePassword': self.saveFilePassword,
                 'useCustomSort': self.useCustomSort,
                 'scaleMode': self.scaleMode,
-                'twoPageMode': self.twoPageMode}
+                'twoPageMode': self.twoPageMode,
+                'scaleFitMode': self.scaleFitMode}
 
     def setDataFromDict(self, dict):
         self.background = dict['background']
@@ -172,6 +179,7 @@ class _configData():
         self.useCustomSort = dict['useCustomSort']
         self.scaleMode = dict['scaleMode']
         self.twoPageMode = dict['twoPageMode']
+        self.scaleFitMode = dict['scaleFitMode']
 
 class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
@@ -225,7 +233,7 @@ class guardTh(threading.Thread):
         global label
         global label2
         global mNowFileInfo
-        global mImgPos
+        global mNowImgInfo
         global InfoMessage
         global mConfigData
 
@@ -252,7 +260,7 @@ class guardTh(threading.Thread):
                     self.nowShowImgPos = 0
                     self.nowFileInfo.Filename = None
                     changeImgLock.acquire()
-                    mImgPos = 0
+                    mNowImgInfo['imgPos'] = 0
                     changeImgLock.release()
                     self.imgCache = [_NONE for i in range(len(self.imgList))]
                     self.imgNum = 0
@@ -303,7 +311,7 @@ class guardTh(threading.Thread):
                         pass
                         # self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("utf-8").decode("utf-8")
                     changeImgLock.acquire()
-                    mImgPos = self.nowShowImgPos
+                    mNowImgInfo['imgPos'] = self.nowShowImgPos
                     changeImgLock.release()
                     self.imgCache = [_NONE for i in range(len(self.imgList))]
                     self.imgNum = len(self.imgList)
@@ -326,17 +334,17 @@ class guardTh(threading.Thread):
                     if RandomLoadImgFlag:
                         mImgLoadQueueLock.acquire()
                         random.shuffle(self.imgList)
-                        mImgPos = 0
-                        self.nowShowImgPos = mImgPos
+                        mNowImgInfo['imgPos'] = 0
+                        self.nowShowImgPos = mNowImgInfo['imgPos']
                         self.shouldRefreshImg = TRUE
                         RandomLoadImgFlag = False
                         self.imgCache = [_NONE for i in range(len(self.imgList))]
                         willLoadImgQueue["imgCache"] = self.imgCache
                         self.addQueue(self.nowShowImgPos)
                         mImgLoadQueueLock.release()
-                    elif self.nowShowImgPos != mImgPos:
-                        mImgPos %= len(self.imgList)
-                        self.nowShowImgPos = mImgPos
+                    elif self.nowShowImgPos != mNowImgInfo['imgPos']:
+                        mNowImgInfo['imgPos'] %= len(self.imgList)
+                        self.nowShowImgPos = mNowImgInfo['imgPos']
                         self.shouldRefreshImg = TRUE
 
                         mImgLoadQueueLock.acquire()
@@ -353,14 +361,16 @@ class guardTh(threading.Thread):
                 mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
-
                 if mConfigData.twoPageMode:
                     isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
                     if isGoodImg:
-                        imgName_a = self.imgList[self.nowShowImgPos].filename
-                        imgName_b = self.imgList[twoPageNum].filename
-                        self.setImgMessage(isGoodImg, imgName_a + ' / ' + imgName_b, self.nowShowImgPos)
+                        changeImgLock.acquire()
+                        mNowImgInfo['step'] = 2
+                        changeImgLock.release()
                     else:
+                        changeImgLock.acquire()
+                        mNowImgInfo['step'] = 1
+                        changeImgLock.release()
                         self.loadSinglePage(self.nowShowImgPos)
                 else:
                     self.loadSinglePage(self.nowShowImgPos)
@@ -378,7 +388,7 @@ class guardTh(threading.Thread):
             win_w = 800
             win_h = 600
         t_showImg = self.imgCache[self.nowShowImgPos]
-        reSize = self.getFitBoxSize(t_showImg, win_w, win_h)
+        reSize = self.getFitBoxSize(t_showImg, win_w, win_h, mConfigData.scaleFitMode)
         if not reSize:
             self.setImgMessage(False, imgName, imgPos)
             return False
@@ -389,10 +399,15 @@ class guardTh(threading.Thread):
             self.setImgMessage(False, imgName, imgPos)
 
         label['text']=""
-        label.configure(image = tk_img)
+        label.configure(image=tk_img)
         label.image = tk_img
         label2.configure(image="")
+        setImgPlace(0, 0)
         self.setImgMessage(True, imgName, imgPos)
+        mNowImgInfo['imgSize'] = [reSize[0], reSize[1]]
+        mNowImgInfo['boxSize'] = [reSize[2], reSize[3]]
+        mNowImgInfo['scrollX'] = 0
+        mNowImgInfo['scrollY'] = 0
         return True
 
     def loadTwoPage(self, imgPos_a, imgPos_b):
@@ -409,15 +424,17 @@ class guardTh(threading.Thread):
             win_h = 600
 
         t_showImg_a = self.imgCache[imgPos_a]
-        reSize_a = self.getFitBoxSize(t_showImg_a, win_w / 2, win_h)
+        reSize_a = self.getFitBoxSize(t_showImg_a, win_w / 2, win_h, SCALE_FIT_MODE_BOTH)
         if not reSize_a:
             return False
+        print('reSize_a w:%-4d h:%-4d' % (reSize_a[0], reSize_a[1]))
         if reSize_a[0] > reSize_a[1]:
             return False
         t_showImg_b = self.imgCache[imgPos_b]
-        reSize_b = self.getFitBoxSize(t_showImg_b, win_w / 2, win_h)
+        reSize_b = self.getFitBoxSize(t_showImg_b, win_w / 2, win_h, SCALE_FIT_MODE_BOTH)
         if not reSize_b:
             return False
+        print('reSize_b w:%-4d h:%-4d' % (reSize_b[0], reSize_b[1]))
         if reSize_b[0] > reSize_b[1]:
             return False
 
@@ -437,6 +454,8 @@ class guardTh(threading.Thread):
         label.image = tk_img_a
         label2.configure(image = tk_img_b)
         label2.image = tk_img_b
+        setImgPlace(0, 0)
+        self.setImgMessage(True, imgName_a + ' / ' + imgName_b, self.nowShowImgPos)
         return True
 
     def checkImgName(self, imgName):
@@ -464,13 +483,19 @@ class guardTh(threading.Thread):
                        '%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)),
                        self.nowFileInfo.Filename)
 
-    def getFitBoxSize(self, showImg, box_x, box_y):
+    def getFitBoxSize(self, showImg, box_x, box_y, mode):
         if showImg is BAD_FILE:
             return False
         img_w, img_h = showImg.size
-        scale = 1.0 * box_y / img_h
-        if img_w * scale > box_x:
+        if mode is SCALE_FIT_MODE_BOTH:
+            scale = 1.0 * box_y / img_h
+            if img_w * scale > box_x:
+                scale = 1.0 * box_x / img_w
+        elif mode is SCALE_FIT_MODE_HEIGHT:
+            scale = 1.0 * box_y / img_h
+        elif mode is SCALE_FIT_MODE_WIDTH:
             scale = 1.0 * box_x / img_w
+
         if scale <= 1:
             box_width = img_w * scale
             box_height = img_h * scale
@@ -1242,6 +1267,9 @@ def enableRandomJumpImg():
 def setTwoPageMode():
     mConfigData.twoPageMode = not mConfigData.twoPageMode
 
+def scaleFitMode(mode):
+    mConfigData.scaleFitMode = mode
+
 def initMenu(master):
     global mTwoViewMode
     global mConfigData
@@ -1271,9 +1299,10 @@ def initMenu(master):
     master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=setTwoPageMode)
     master.menu.viewmenu.add_separator()
     mViewMode = StringVar()
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=fileDialog)
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应宽度模式", command=fileDialog)
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应高度模式", command=fileDialog)
+    mViewMode.set(mConfigData.scaleFitMode)
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=lambda: scaleFitMode(0))
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应宽度模式", command=lambda: scaleFitMode(1))
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应高度模式", command=lambda: scaleFitMode(2))
     mViewMode.set('最佳适应模式')
     master.menu.viewmenu.add_separator()
     master.menu.viewmenu.add_command(label="顺时针旋转 90度", command=lambda: rotateImg(1))
@@ -1405,30 +1434,27 @@ def slide():
 
 def ShowPic(value, jump_num=0):
     global changeImgLock
-    global mImgPos
+    global mNowImgInfo
     global mConfigData
     global RANDOM_LIST
     global RANDOM_LIST_INDEX
     global RANDOM_LIST_LENGTH
-    t_step = 1
-    if mConfigData.twoPageMode:
-        t_step = 2
 
     changeImgLock.acquire()
     if RANDOM_JUMP_IMG:
         if value is BACK_IMG:
-            RANDOM_LIST_INDEX -= 1
+            RANDOM_LIST_INDEX -= mNowImgInfo['step']
         else:
-            RANDOM_LIST_INDEX += 1
+            RANDOM_LIST_INDEX += mNowImgInfo['step']
         RANDOM_LIST_INDEX %= RANDOM_LIST_LENGTH
-        mImgPos = RANDOM_LIST[RANDOM_LIST_INDEX]
+        mNowImgInfo['imgPos'] = RANDOM_LIST[RANDOM_LIST_INDEX]
     else:
         if value is BACK_IMG:
-            mImgPos -= t_step
+            mNowImgInfo['imgPos'] -= mNowImgInfo['step']
         elif value is NEXT_IMG:
-            mImgPos += t_step
+            mNowImgInfo['imgPos'] += mNowImgInfo['step']
         elif value is JUMP_IMG:
-            mImgPos = jump_num
+            mNowImgInfo['imgPos'] = jump_num
     changeImgLock.release()
 
 def changeFile(direct, jump_file=0):
@@ -1486,6 +1512,41 @@ def mouseEvent(ev):
             slideLock.release()
             slideT = threading.Timer(0, slide)
             slideT.start()
+
+def mouseWheelEvent(event):
+    global mNowImgInfo
+    global mConfigData
+    global root
+
+    if not (mConfigData.twoPageMode or mConfigData.scaleFitMode is SCALE_FIT_MODE_BOTH):
+        img_w, img_h = mNowImgInfo['boxSize']
+        box_w = root.winfo_width()
+        box_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
+        t_scroll_x = mNowImgInfo['scrollX']
+        t_scroll_y = mNowImgInfo['scrollY']
+        if mConfigData.scaleFitMode is SCALE_FIT_MODE_WIDTH:
+            max_scroll = (img_h - box_h) / 2
+            if max_scroll < 0:
+                return
+            if event.num == 4:
+                t_scroll_y = min([t_scroll_y + 10, max_scroll])
+            elif event.num == 5:
+                t_scroll_y = max(t_scroll_y - 10, -max_scroll)
+        elif mConfigData.scaleFitMode is SCALE_FIT_MODE_HEIGHT:
+            max_scroll = (img_w - box_w) / 2
+            if max_scroll < 0:
+                return
+            if event.num == 4:
+                t_scroll_x = min(t_scroll_x + 10, max_scroll)
+            elif event.num == 5:
+                t_scroll_x = max(t_scroll_x - 10, -max_scroll)
+        setImgPlace(t_scroll_x, t_scroll_y)
+        mNowImgInfo['scrollX'] = t_scroll_x
+        mNowImgInfo['scrollY'] = t_scroll_y
+
+def setImgPlace(mX, mY):
+    global root
+    root.mainFrame.imgFrame.place(x=mX, y=mY - MESSAGE_BAR_HEIGHT / 2)
 
 def onKeyPress(ev):
     global nTime
@@ -1600,7 +1661,7 @@ def closeWin():
         ChangeFileLock.acquire()
         mConfigData.restoreData['filename'] = mNowFileInfo['filename']
         mConfigData.restoreData['uri'] = mNowFileInfo['uri']
-        mConfigData.restoreData['imgPos'] = mImgPos
+        mConfigData.restoreData['imgPos'] = mNowImgInfo['imgPos']
         mImgLoadQueueLock.release()
         changeImgLock.release()
         ChangeFileLock.release()
@@ -1633,6 +1694,8 @@ if __name__ == '__main__':
     # root.wm_attributes('-zoomed',1)
     root.wm_attributes('-topmost', 0)
     root.bind("<Button-1>", mouseEvent)
+    root.bind("<Button-4>", mouseWheelEvent)
+    root.bind("<Button-5>", mouseWheelEvent)
     root.bind("<Key>", onKeyPress)
     root.title('图包浏览器')
     initMenu(root)
@@ -1651,7 +1714,12 @@ if __name__ == '__main__':
 
     SUB_FILE_DEPTH = mConfigData.scanSubFileDepth
     nowFilePath = os.getcwd() + '/'
-    mImgPos = 0
+    mNowImgInfo = {'imgPos': 0,
+                   'step': 1,
+                   'scrollX': 0,
+                   'scrollY': 0,
+                   'imgSize': [0, 0],
+                   'boxSize': [0, 0]}
     FILE_LIST = []
     ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE, 'imgPos': 0}
     mNowFileInfo = {'filename': '', 'uri': '', 'imgPos': 0}
