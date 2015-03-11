@@ -13,7 +13,11 @@ import random
 import platform
 import PIL
 from PIL import Image
-import imageTk
+try:
+    import _imagingtk
+    import imageTk as imgTk
+except:
+    from PIL import ImageTk as imgTk
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
@@ -220,9 +224,9 @@ class guardTh(threading.Thread):
                     show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
                 else:
                     show_img_resize = showImg
-                tk_img = imageTk.PhotoImage(show_img_resize)
+                    
                 try:
-                    pass
+                    tk_img = imgTk.PhotoImage(show_img_resize)
                 except:
                     show_img_resize = BAD_FILE
 
