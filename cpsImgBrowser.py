@@ -2,7 +2,6 @@
 # coding=utf-8
 
 import io
-import urllib
 import json
 import os
 import rarfile
@@ -14,7 +13,7 @@ import random
 import platform
 import PIL
 from PIL import Image
-from PIL.ImageTk import *
+import imageTk
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
@@ -221,8 +220,9 @@ class guardTh(threading.Thread):
                     show_img_resize = self.resizePic(img_w, img_h, box_width, box_height, showImg)
                 else:
                     show_img_resize = showImg
+                tk_img = imageTk.PhotoImage(show_img_resize)
                 try:
-                    tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
+                    pass
                 except:
                     show_img_resize = BAD_FILE
 
