@@ -32,7 +32,7 @@
     **$ sudo apt-get install python3-pil.imagetk**  
     $ sudo apt-get install python3-pip      
     $ sudo pip install rarfile  
-* **_NEW_** 非ubuntu系统也只需要通过pip安装pillow和rarfile模块即可
+* 非ubuntu系统也只需要通过pip安装pillow和rarfile模块即可
 * 现大部分的卡顿在于图片文件的载入和重绘，也就是zipfile的read函数和tk界面绘制：   
 按键事件->轮询响应事件(0.0001s ~ 0.0002s)->载入图片(0.5s ~ 12s)->显示(0.4s ~ 1.0s)    
 **现已加入抗锯齿手动设置，默认为无抗锯齿，开启和关闭抗锯齿载入时间相差0.7s ~ 10s**

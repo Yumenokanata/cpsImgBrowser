@@ -13,11 +13,7 @@ import random
 import platform
 import PIL
 from PIL import Image
-try:
-    import _imagingtk
-    import imageTk as imgTk
-except:
-    from PIL import ImageTk as imgTk
+from PIL import ImageTk as imgTk
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
