@@ -11,7 +11,7 @@
 * 文件解压于内存中，减少磁盘使用
 * 多线程预载入，提升图片显示速度
 * 独立线程载入图片，提升响应速度    
-* 特有排序规则，正确排序文件名常见的"a1"<"a10"<"a2"问题 **_TEST_**
+* 特有排序规则，正确排序文件名常见的"a1"<"a10"<"a2"问题 **_NEW_**
 
 ###缺点：
 * 对zip文件的效率较低
@@ -26,11 +26,12 @@
         $ pip install rarfile   
         $ pip install pillow   
     3. 然后就可以双击py文件运行了
-* 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令:
-    $ sudo apt-get install python3-pil
-    $ sudo apt-get install python3-tk
-    $ sudo apt-get install python3-pip
-    $ sudo pip install rarfile
+* 需要安装python3的PIL、tkinter和rarfile库，ubuntu下可依次输入以下命令:    
+    $ sudo apt-get install python3-pil      
+    $ sudo apt-get install python3-tk   
+    **$ sudo apt-get install python3-pil.imagetk**  
+    $ sudo apt-get install python3-pip      
+    $ sudo pip install rarfile  
 * 现大部分的卡顿在于图片文件的载入和重绘，也就是zipfile的read函数和tk界面绘制：   
 按键事件->轮询响应事件(0.0001s ~ 0.0002s)->载入图片(0.5s ~ 12s)->显示(0.4s ~ 1.0s)    
 **现已加入抗锯齿手动设置，默认为无抗锯齿，开启和关闭抗锯齿载入时间相差0.7s ~ 10s**
