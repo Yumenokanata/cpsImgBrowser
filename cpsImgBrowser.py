@@ -16,7 +16,8 @@ import random
 import platform
 import PIL
 from PIL import Image
-from PIL.ImageTk import *
+# from PIL import ImageTk
+import imageTk
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
@@ -393,9 +394,11 @@ class guardTh(threading.Thread):
             self.setImgMessage(False, imgName, imgPos)
             return False
         show_img_resize = self.resizePic(reSize[0], reSize[1], reSize[2], reSize[3], t_showImg)
+
         try:
-            tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
-        except:
+            tk_img = imageTk.PhotoImage(show_img_resize)
+        except Exception as ex:
+            print(ex)
             self.setImgMessage(False, imgName, imgPos)
             return False
 
@@ -441,12 +444,12 @@ class guardTh(threading.Thread):
 
         show_img_resize_a = self.resizePic(reSize_a[0], reSize_a[1], reSize_a[2], reSize_a[3], t_showImg_a)
         try:
-            tk_img_a = PIL.ImageTk.PhotoImage(show_img_resize_a)
+            tk_img_a = imageTk.PhotoImage(show_img_resize_a)
         except:
             return False
         show_img_resize_b = self.resizePic(reSize_b[0], reSize_b[1], reSize_b[2], reSize_b[3], t_showImg_b)
         try:
-            tk_img_b = PIL.ImageTk.PhotoImage(show_img_resize_b)
+            tk_img_b = imageTk.PhotoImage(show_img_resize_b)
         except:
             return False
 
