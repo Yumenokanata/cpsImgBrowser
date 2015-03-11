@@ -397,6 +397,7 @@ class guardTh(threading.Thread):
             tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
         except:
             self.setImgMessage(False, imgName, imgPos)
+            return False
 
         label['text']=""
         label.configure(image=tk_img)
@@ -1123,6 +1124,9 @@ def fileDialog(master, MODE):
 # TODO
 def rotateImg(MODE):
     print(MODE)
+    global label
+    img = label.image
+    print(img)
 
 def changeFileFromDialog(path, imgPos=0, filename=''):
     global FILE_LIST
@@ -1262,7 +1266,9 @@ def testMyAskString():
 
 def enableRandomJumpImg():
     global RANDOM_JUMP_IMG
+    global mRandomSlide
     RANDOM_JUMP_IMG = not RANDOM_JUMP_IMG
+    mRandomSlide.set(RANDOM_JUMP_IMG)
 
 def setTwoPageMode():
     mConfigData.twoPageMode = not mConfigData.twoPageMode
@@ -1270,13 +1276,35 @@ def setTwoPageMode():
 def scaleFitMode(mode):
     mConfigData.scaleFitMode = mode
 
+def startSlide():
+    global slideT
+    global SLIDE_START
+    if slideT.isAlive():
+        slideLock.acquire()
+        SLIDE_START = False
+        slideLock.release()
+    else:
+        slideLock.acquire()
+        SLIDE_START = True
+        slideLock.release()
+        slideT = threading.Timer(0, slide)
+        slideT.start()
+
+def stopSlide():
+    global slideT
+    global SLIDE_START
+    if slideT.isAlive():
+        slideLock.acquire()
+        SLIDE_START = False
+        slideLock.release()
+
 def initMenu(master):
     global mTwoViewMode
     global mConfigData
     master.menu = Menu(master)
 
     master.menu.filemenu = Menu(master)
-    master.menu.add_cascade(label='文件',menu=master.menu.filemenu)
+    master.menu.add_cascade(label='文件', menu=master.menu.filemenu)
     master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
     master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
     master.menu.filemenu.add_separator()
@@ -1293,39 +1321,44 @@ def initMenu(master):
     master.menu.filemenu.add_command(label="退出", command=fileDialog)
 
     master.menu.viewmenu = Menu(master)
-    master.menu.add_cascade(label='查看',menu=master.menu.viewmenu)
+    master.menu.add_cascade(label='查看', menu=master.menu.viewmenu)
+    global mTwoViewMode
     mTwoViewMode = IntVar()
     mTwoViewMode.set(mConfigData.twoPageMode)
     master.menu.viewmenu.add_checkbutton(variable=mTwoViewMode, label="双页模式",command=setTwoPageMode)
     master.menu.viewmenu.add_separator()
-    mViewMode = StringVar()
+    global mViewMode
+    mViewMode = IntVar()
     mViewMode.set(mConfigData.scaleFitMode)
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="最佳适应模式", command=lambda: scaleFitMode(0))
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应宽度模式", command=lambda: scaleFitMode(1))
-    master.menu.viewmenu.add_radiobutton(variable=mViewMode, label="适应高度模式", command=lambda: scaleFitMode(2))
-    mViewMode.set('最佳适应模式')
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, value=0, label="最佳适应模式", command=lambda: scaleFitMode(0))
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, value=1, label="适应宽度模式", command=lambda: scaleFitMode(1))
+    master.menu.viewmenu.add_radiobutton(variable=mViewMode, value=2, label="适应高度模式", command=lambda: scaleFitMode(2))
     master.menu.viewmenu.add_separator()
     master.menu.viewmenu.add_command(label="顺时针旋转 90度", command=lambda: rotateImg(1))
     master.menu.viewmenu.add_command(label="逆时针旋转 90度", command=lambda: rotateImg(2))
     master.menu.viewmenu.add_command(label="旋转 180度", command=lambda: rotateImg(3))
 
     master.menu.jumpmenu = Menu(master)
-    master.menu.add_cascade(label='跳转',menu=master.menu.jumpmenu)
-    master.menu.jumpmenu.add_command(label="文件跳转...", command=fileDialog)
-    master.menu.jumpmenu.add_command(label="文件随机跳转", command=fileDialog)
+    master.menu.add_cascade(label='跳转', menu=master.menu.jumpmenu)
+    master.menu.jumpmenu.add_command(label="文件跳转...", command=fileJump)
+    master.menu.jumpmenu.add_command(label="文件随机跳转", command=fileRandomJump)
     master.menu.jumpmenu.add_separator()
-    master.menu.jumpmenu.add_command(label="图片跳转...", command=fileDialog)
-    master.menu.jumpmenu.add_command(label="图片随机跳转", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="图片跳转...", command=imgJump)
+    # master.menu.jumpmenu.add_command(label="图片随机跳转", command=fileDialog)
     master.menu.jumpmenu.add_separator()
-    master.menu.jumpmenu.add_command(label="下一页", command=fileDialog)
-    master.menu.jumpmenu.add_command(label="上一页", command=fileDialog)
-    master.menu.jumpmenu.add_command(label="下一文件包", command=fileDialog)
-    master.menu.jumpmenu.add_command(label="上一文件包", command=fileDialog)
+    master.menu.jumpmenu.add_command(label="下一页", command=lambda: ShowPic(NEXT_IMG))
+    master.menu.jumpmenu.add_command(label="上一页", command=lambda: ShowPic(BACK_IMG))
+    master.menu.jumpmenu.add_command(label="下一文件包", command=lambda: changeFile(NEXT_FILE))
+    master.menu.jumpmenu.add_command(label="上一文件包", command=lambda: changeFile(BACK_FILE))
     master.menu.jumpmenu.add_separator()
+    global mSlide
     mSlide = IntVar()
-    master.menu.jumpmenu.add_checkbutton(variable=mSlide, label="放映幻灯片",command=fileDialog)
+    mSlide.set(0)
+    master.menu.jumpmenu.add_checkbutton(variable=mSlide, label="放映幻灯片", command=startSlide)
+    global mRandomSlide
     mRandomSlide = IntVar()
-    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机播放模式", command=enableRandomJumpImg)
+    mRandomSlide.set(RANDOM_JUMP_IMG)
+    master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机模式", command=enableRandomJumpImg)
 
     master.menu.bookmarkmenu = Menu(master)
     master.menu.add_cascade(label='书签',menu=master.menu.bookmarkmenu)
@@ -1334,6 +1367,21 @@ def initMenu(master):
     master.menu.bookmarkmenu.add_separator()
 
     master['menu'] = master.menu
+
+def initMouseRightMenu(master):
+    global rightMenu
+    rightMenu = Menu(master)
+
+    rightMenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
+    rightMenu.add_command(label="文件属性...", command=showInfoOfFile)
+    rightMenu.add_separator()
+    global mTwoViewMode
+    rightMenu.add_checkbutton(variable=mTwoViewMode, label="双页模式", command=setTwoPageMode)
+    rightMenu.add_checkbutton(variable=mRandomSlide, label="随机模式", command=enableRandomJumpImg)
+    rightMenu.add_separator()
+    rightMenu.add_command(label="文件跳转...", command=fileJump)
+    rightMenu.add_command(label="文件随机跳转", command=fileRandomJump)
+    rightMenu.add_command(label="图片跳转...", command=imgJump)
 
 def initMessage(master):
     global InfoMessage
@@ -1461,6 +1509,7 @@ def changeFile(direct, jump_file=0):
     global label
     global label2
     global ChangeFileFlag
+    stopSlide()
     label.configure(image="")
     label2.configure(image="")
     label['text'] = "Loading"
@@ -1472,11 +1521,19 @@ def changeFile(direct, jump_file=0):
         ChangeFileFlag["willFilePos"] = jump_file
     ChangeFileLock.release()
 
+def mouseRightEvent(event):
+    global rightMenu
+    rightMenu.unpost()
+    rightMenu.post(event.x_root, event.y_root)
+
 def mouseEvent(ev):
     global nTime
     nTime = time.time()
     global slideT
     global SLIDE_START
+    global rightMenu
+    rightMenu.unpost()
+
     s_width = root.winfo_width()
     s_height = root.winfo_height()
     t=root.winfo_geometry()
@@ -1490,28 +1547,11 @@ def mouseEvent(ev):
     elif ev_x < s_width / 3.0:
         ShowPic(BACK_IMG)
     elif ev_y > s_height / 3.0 * 2.0:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
         changeFile(NEXT_FILE)
     elif ev_y < s_height / 3.0:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
         changeFile(BACK_FILE)
     else:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
-        else:
-            slideLock.acquire()
-            SLIDE_START = True
-            slideLock.release()
-            slideT = threading.Timer(0, slide)
-            slideT.start()
+        startSlide()
 
 def mouseWheelEvent(event):
     global mNowImgInfo
@@ -1529,17 +1569,17 @@ def mouseWheelEvent(event):
             if max_scroll < 0:
                 return
             if event.num == 4:
-                t_scroll_y = min([t_scroll_y + 10, max_scroll])
+                t_scroll_y = min([t_scroll_y + 20, max_scroll])
             elif event.num == 5:
-                t_scroll_y = max(t_scroll_y - 10, -max_scroll)
+                t_scroll_y = max(t_scroll_y - 20, -max_scroll)
         elif mConfigData.scaleFitMode is SCALE_FIT_MODE_HEIGHT:
             max_scroll = (img_w - box_w) / 2
             if max_scroll < 0:
                 return
             if event.num == 4:
-                t_scroll_x = min(t_scroll_x + 10, max_scroll)
+                t_scroll_x = min(t_scroll_x + 20, max_scroll)
             elif event.num == 5:
-                t_scroll_x = max(t_scroll_x - 10, -max_scroll)
+                t_scroll_x = max(t_scroll_x - 20, -max_scroll)
         setImgPlace(t_scroll_x, t_scroll_y)
         mNowImgInfo['scrollX'] = t_scroll_x
         mNowImgInfo['scrollY'] = t_scroll_y
@@ -1548,6 +1588,30 @@ def setImgPlace(mX, mY):
     global root
     root.mainFrame.imgFrame.place(x=mX, y=mY - MESSAGE_BAR_HEIGHT / 2)
 
+def fileJump():
+    jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
+    try:
+        jump_num = int(jump_num)
+        jump_num = max([1, jump_num])
+        jump_num = min([len(FILE_LIST), jump_num])
+        changeFile(JUMP_FILE, jump_file=jump_num - 1)
+    except:
+        showerror(title="错误", message="输入错误！")
+
+def imgJump():
+    jump_num = askstring(title='图片跳转', prompt="请输入跳转到的图片序号: ")
+    try:
+        jump_num = int(jump_num)
+        jump_num = max([1, jump_num])
+        ShowPic(JUMP_IMG, jump_num=jump_num - 1)
+    except:
+        print("输入错误")
+
+def fileRandomJump():
+    if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
+        jump_num = random.randint(0, len(FILE_LIST))
+        changeFile(JUMP_FILE, jump_file=jump_num)
+
 def onKeyPress(ev):
     global nTime
     nTime = time.time()
@@ -1555,22 +1619,9 @@ def onKeyPress(ev):
     global SLIDE_START
     # print(ev.keycode)
     if ev.keycode == KEY_CODE.codeS:
-        if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
-        else:
-            slideLock.acquire()
-            SLIDE_START = True
-            slideLock.release()
-            slideT = threading.Timer(0, slide)
-            slideT.start()
+        startSlide()
         return
-
-    if slideT.isAlive():
-            slideLock.acquire()
-            SLIDE_START = False
-            slideLock.release()
+    stopSlide()
 
     if ev.keycode == KEY_CODE.codeLeft:
         ShowPic(BACK_IMG)
@@ -1581,22 +1632,9 @@ def onKeyPress(ev):
     elif ev.keycode == KEY_CODE.codeA or ev.keycode == KEY_CODE.codeUp:
         changeFile(BACK_FILE)
     elif ev.keycode == KEY_CODE.codeW:
-        jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
-        try:
-            jump_num = int(jump_num)
-            jump_num = max([1, jump_num])
-            jump_num = min([len(FILE_LIST), jump_num])
-            changeFile(JUMP_FILE, jump_file=jump_num - 1)
-        except:
-            showerror(title="错误", message="输入错误！")
+        fileJump()
     elif ev.keycode == KEY_CODE.codeE:
-        jump_num = askstring(title='图片跳转', prompt="请输入跳转到的图片序号: ")
-        try:
-            jump_num = int(jump_num)
-            jump_num = max([1, jump_num])
-            ShowPic(JUMP_IMG, jump_num=jump_num - 1)
-        except:
-            print("输入错误")
+        imgJump()
     elif ev.keycode == KEY_CODE.codeR:
         if askquestion(title="乱序浏览", message="是否打乱图片顺序?") == YES:
             changeImgLock.acquire()
@@ -1604,9 +1642,7 @@ def onKeyPress(ev):
             RandomLoadImgFlag = True
             changeImgLock.release()
     elif ev.keycode == KEY_CODE.codeC:
-        if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
-            jump_num = random.randint(0, len(FILE_LIST))
-            changeFile(JUMP_FILE, jump_file=jump_num)
+        fileRandomJump()
     elif ev.keycode == KEY_CODE.codeM:
         if mConfigData.defaultPassword:
             dpw = mConfigData.defaultPassword[0]
@@ -1694,6 +1730,7 @@ if __name__ == '__main__':
     # root.wm_attributes('-zoomed',1)
     root.wm_attributes('-topmost', 0)
     root.bind("<Button-1>", mouseEvent)
+    root.bind("<Button-3>", mouseRightEvent)
     root.bind("<Button-4>", mouseWheelEvent)
     root.bind("<Button-5>", mouseWheelEvent)
     root.bind("<Key>", onKeyPress)
@@ -1711,6 +1748,7 @@ if __name__ == '__main__':
     # label2.grid_forget()
     # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
     initMessage(root.mainFrame)
+    initMouseRightMenu(root)
 
     SUB_FILE_DEPTH = mConfigData.scanSubFileDepth
     nowFilePath = os.getcwd() + '/'
