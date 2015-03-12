@@ -74,6 +74,12 @@ SCALE_FIT_MODE_BOTH = 0
 SCALE_FIT_MODE_WIDTH = 1
 SCALE_FIT_MODE_HEIGHT = 2
 
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+SCREEN_SIZE_CHANGE = False
+
+RIGHT_MENU_VISIBLE = False
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -114,9 +120,7 @@ class _configData():
     def __init__(self, background='#d3d3d3',
                  customBackground='#d3d3d3',
                  restore=True,
-                 restoreData={'filename':'',
-                              'uri':'',
-                              'imgPos': 0},
+                 restoreData={'filename':'', 'uri':'', 'imgPos': 0},
                  saveLatelyFileInfo=True,
                  latelyFileInfo=[],
                  scanSubFile=True,
@@ -190,6 +194,18 @@ class _fileImgInfo():
     def __init__(self, filename=_NONE, uri=_NONE):
             self.filename = filename
             self.uri = uri
+
+def getFileKey(uri):
+    if USE_FILE_MD5:
+        if not os.path.exists(uri):
+            print("error:fileURI not exists")
+            exit()
+        md5file = open(uri, 'rb')
+        md5 = hashlib.md5(md5file.read()).hexdigest()
+        md5file.close()
+        return md5
+    else:
+        return hashlib.md5(uri.encode("utf-8")).hexdigest()
 
 class guardTh(threading.Thread):
     def __init__(self):
@@ -356,16 +372,30 @@ class guardTh(threading.Thread):
 
                 if mConfigData.twoPageMode:
                     isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
-                    if isGoodImg:
-                        changeImgLock.acquire()
-                        mNowImgInfo['used'] = 2
-                        changeImgLock.release()
+                    changeImgLock.acquire()
+                    if mNowImgInfo['direct'] is BACK_IMG:
+                        if isGoodImg:
+                            mNowImgInfo['used'] = 2
+                            changeImgLock.release()
+                        else:
+                            if mNowImgInfo['step'] == 2:
+                                mNowImgInfo['imgPos'] += 1
+                                mNowImgInfo['imgPos'] %= self.imgNum
+                                self.nowShowImgPos = mNowImgInfo['imgPos']
+                            changeImgLock.release()
+                            self.loadSinglePage(self.nowShowImgPos)
                     else:
-                        self.loadSinglePage(self.nowShowImgPos)
+                        if isGoodImg:
+                            mNowImgInfo['used'] = 2
+                            changeImgLock.release()
+                        else:
+                            changeImgLock.release()
+                            self.loadSinglePage(self.nowShowImgPos)
                 else:
                     self.loadSinglePage(self.nowShowImgPos)
+                mNowImgInfo['step'] = 2
 
-                # print("Sum Load Img Time: " + str(time.time() - st))
+                print("Sum Load Img Time: " + str(time.time() - st))
                 mImgLoadQueueLock.release()
 
     def loadSinglePage(self, imgPos):
@@ -398,10 +428,17 @@ class guardTh(threading.Thread):
         setImgPlace(0, 0)
         self.setImgMessage(True, imgName, imgPos)
         changeImgLock.acquire()
+        if mConfigData.scaleFitMode == SCALE_FIT_MODE_WIDTH:
+            box_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
+            scroll = (reSize[3] - box_h) / 2
+            setImgPlace(0, scroll)
+            mNowImgInfo['scrollX'] = 0
+            mNowImgInfo['scrollY'] = scroll
+        else:
+            mNowImgInfo['scrollX'] = 0
+            mNowImgInfo['scrollY'] = 0
         mNowImgInfo['imgSize'] = [reSize[0], reSize[1]]
         mNowImgInfo['boxSize'] = [reSize[2], reSize[3]]
-        mNowImgInfo['scrollX'] = 0
-        mNowImgInfo['scrollY'] = 0
         mNowImgInfo['used'] = 1
         changeImgLock.release()
         return True
@@ -510,26 +547,30 @@ class guardTh(threading.Thread):
         willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[start_pos],
                                                  "imgPos": start_pos}]
         if mConfigData.useCache:
-            list_num = len(self.imgList)
-            for i in range(min([30, list_num])):
-                t_nextLoadImgPos = (start_pos + i) % list_num
-                willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                             "imgPos": t_nextLoadImgPos})
-                t_nextLoadImgPos = (start_pos - i) % list_num
-                willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+            if mConfigData.twoPageMode:
+                list_num = len(self.imgList)
+                for i in range(min([5, list_num])):
+                    t_nextLoadImgPos = (start_pos + i) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                 "imgPos": t_nextLoadImgPos})
+                    t_nextLoadImgPos = (start_pos + i + 1) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
                                                          "imgPos": t_nextLoadImgPos})
-
-    def getStringMD5(self, string):
-        return hashlib.md5(string.encode("utf-8")).hexdigest()
-
-    def getFileMD5(self, uri):
-        if not os.path.exists(uri):
-            print("error:fileURI not exists")
-            exit()
-        md5file = open(uri, 'rb')
-        md5 = hashlib.md5(md5file.read()).hexdigest()
-        md5file.close()
-        return md5
+                    t_nextLoadImgPos = (start_pos - i) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                 "imgPos": t_nextLoadImgPos})
+                    t_nextLoadImgPos = (start_pos - i - 1) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                         "imgPos": t_nextLoadImgPos})
+            else:
+                list_num = len(self.imgList)
+                for i in range(min([10, list_num])):
+                    t_nextLoadImgPos = (start_pos + i) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                                 "imgPos": t_nextLoadImgPos})
+                    t_nextLoadImgPos = (start_pos - i) % list_num
+                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
+                                                         "imgPos": t_nextLoadImgPos})
 
     def resizePic(self, w, h, rw, rh, pil_image):
         if w == rw and h == rh:
@@ -801,14 +842,11 @@ class guardTh(threading.Thread):
             return_fruit = self.openZipFile(file_pos)
 
         while not return_fruit:
-            if USE_FILE_MD5:
-                file_md5 = self.getFileMD5(file_uri + filename)
-            else:
-                file_md5 = self.getStringMD5(file_uri + filename)
+            file_md5 = getFileKey(file_uri + filename)
             try:
                 PWD_JSON[file_md5]
             except:
-                PWD_JSON.update({file_md5:{"password": "", "badfile": True}})
+                PWD_JSON.update({file_md5:{"password": "", "badfile": True, "filename": filename, "uri": file_uri}})
             FILE_LIST[file_pos]["CanRead"] = False
             file_pos = self.nextCanReadFile(direct, file_pos)
             filename = FILE_LIST[file_pos]["filename"]
@@ -864,10 +902,7 @@ class guardTh(threading.Thread):
             print("error:fileURI not exists")
             exit()
         # StartTime = time.time()
-        if USE_FILE_MD5:
-            file_md5 = self.getFileMD5(_file_uri + _filename)
-        else:
-            file_md5 = self.getStringMD5(_file_uri + _filename)
+        file_md5 = getFileKey(_file_uri + _filename)
         # print(time.time() - StartTime)
 
         try:
@@ -897,6 +932,7 @@ class guardTh(threading.Thread):
                     raise Exception
                 t_cps_file.setpassword(pwd.encode("utf-8"))
                 t_cps_file.open(t_list[0])
+                PWD_JSON[file_md5] = self.updateOldDataToNew(PWD_JSON[file_md5], _filename, _file_uri)
             except:
                 has_pwd = False
                 try:
@@ -909,7 +945,7 @@ class guardTh(threading.Thread):
                             t_cps_file.setpassword(p.encode("utf-8"))
                             t_cps_file.open(t_list[0])
                             has_pwd = True
-                            PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
+                            PWD_JSON.update({file_md5:{"password": p, "badfile": False, "filename": _filename, "uri": _file_uri}})
                             break
                         except:
                             pass
@@ -922,13 +958,13 @@ class guardTh(threading.Thread):
                         t_root.destroy()
                     label['text'] = "Loading"
                     if pwd == "skip" or pwd == None:
-                        PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
+                        PWD_JSON.update({file_md5:{"password": "", "badfile": False, "filename": _filename, "uri": _file_uri}})
                         return False
                     try:
                         t_cps_file.setpassword(pwd.encode("utf-8"))
                         t_cps_file.open(t_list[0])
                         has_pwd = True
-                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
+                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False, "filename": _filename, "uri": _file_uri}})
                     except Exception as ex:
                         print(ex)
                         print("Password is WRONG !")
@@ -946,10 +982,7 @@ class guardTh(threading.Thread):
             print("error:fileURI not exists")
             exit()
         # st = time.time()
-        if USE_FILE_MD5:
-            file_md5 = self.getFileMD5(_file_uri + _filename)
-        else:
-            file_md5 = self.getStringMD5(_file_uri + _filename)
+        file_md5 = getFileKey(_file_uri + _filename)
         # print("getFileMD5: %f"%(time.time() - st))
 
         try:
@@ -977,6 +1010,7 @@ class guardTh(threading.Thread):
                 t_cps_file.setpassword(pwd)
                 # t_cps_file.read(t_cps_file.infolist()[0])
                 # t_cps_file.testrar()
+                PWD_JSON[file_md5] = self.updateOldDataToNew(PWD_JSON[file_md5], _filename, _file_uri)
                 s_reload = False
             except:
                 has_pwd = False
@@ -992,7 +1026,7 @@ class guardTh(threading.Thread):
                             t_cps_file.testrar()
                             has_pwd = True
                             pwd = p
-                            PWD_JSON.update({file_md5:{"password": p, "badfile": False}})
+                            PWD_JSON.update({file_md5:{"password": p, "badfile": False, "filename": _filename, "uri": _file_uri}})
                             break
                         except:
                             pass
@@ -1005,14 +1039,14 @@ class guardTh(threading.Thread):
                         t_root.destroy()
                     label['text'] = "Loading"
                     if pwd == "skip" or pwd == None:
-                        PWD_JSON.update({file_md5:{"password": "", "badfile": False}})
+                        PWD_JSON.update({file_md5:{"password": "", "badfile": False, "filename": _filename, "uri": _file_uri}})
                         return False
                     try:
                         t_cps_file.setpassword(pwd)
                         # t_cps_file.read(t_list[0])
                         t_cps_file.testrar()
                         has_pwd = True
-                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False}})
+                        PWD_JSON.update({file_md5:{"password": pwd, "badfile": False, "filename": _filename, "uri": _file_uri}})
                     except:
                         print("Password is WRONG !")
 
@@ -1028,6 +1062,14 @@ class guardTh(threading.Thread):
             if not self.getImageList(t_cps_file):
                 return False
         return t_cps_file
+
+    def updateOldDataToNew(self, info, filename, uri):
+        try:
+            info['filename']
+            return info
+        except:
+            return {'password': info['password'], 'badfile': info['badfile'], 'filename': filename, 'uri': uri}
+
 
 class loadImgTh(threading.Thread):
     def __init__(self):
@@ -1288,6 +1330,24 @@ def stopSlide():
         SLIDE_START = False
         slideLock.release()
 
+def passwordConfig():
+    global PWD_JSON
+    passwordDialog(root, mConfigData.defaultPassword, PWD_JSON, command=setPasswordConfig)
+
+def setPasswordConfig(defaultPassword, filePassword):
+    global mConfigData
+    if filePassword:
+        global PWD_JSON
+        PWD_JSON = filePassword
+        if mConfigData.saveFilePassword:
+            t_pwd_json = json.dumps(PWD_JSON)
+            with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
+                f.write(t_pwd_json)
+
+    if defaultPassword:
+        mConfigData.defaultPassword = defaultPassword
+    print('setPasswordConfig')
+
 def initMenu(master):
     global mTwoViewMode
     global mConfigData
@@ -1299,7 +1359,7 @@ def initMenu(master):
     master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_command(label="文件属性...", command=showInfoOfFile)
-    master.menu.filemenu.add_command(label="密码管理...", command=fileDialog)
+    master.menu.filemenu.add_command(label="密码管理...", command=passwordConfig)
     master.menu.filemenu.add_command(label="首选项...", command=config)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.s_submenu = Menu(master)
@@ -1340,8 +1400,8 @@ def initMenu(master):
     master.menu.jumpmenu.add_command(label="图片跳转...", command=imgJump)
     # master.menu.jumpmenu.add_command(label="图片随机跳转", command=fileDialog)
     master.menu.jumpmenu.add_separator()
-    master.menu.jumpmenu.add_command(label="下一页", command=lambda: ShowPic(NEXT_IMG))
-    master.menu.jumpmenu.add_command(label="上一页", command=lambda: ShowPic(BACK_IMG))
+    master.menu.jumpmenu.add_command(label="下一页", command=lambda: changePicSingle(NEXT_IMG))
+    master.menu.jumpmenu.add_command(label="上一页", command=lambda: changePicSingle(BACK_IMG))
     master.menu.jumpmenu.add_command(label="下一文件包", command=lambda: changeFile(NEXT_FILE))
     master.menu.jumpmenu.add_command(label="上一文件包", command=lambda: changeFile(BACK_FILE))
     master.menu.jumpmenu.add_separator()
@@ -1366,7 +1426,8 @@ def initMouseRightMenu(master):
     global rightMenu
     rightMenu = Menu(master)
 
-    rightMenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
+    rightMenu.add_command(label="下一页", command=lambda: changePicSingle(NEXT_IMG))
+    rightMenu.add_command(label="上一页", command=lambda: changePicSingle(BACK_IMG))
     rightMenu.add_command(label="文件属性...", command=showInfoOfFile)
     rightMenu.add_separator()
     global mTwoViewMode
@@ -1489,20 +1550,34 @@ def ShowPic(value, jump_num=0):
     if value is JUMP_IMG:
         mNowImgInfo['imgPos'] = jump_num
     else:
-        if RANDOM_JUMP_IMG:
-            if value is BACK_IMG:
-                RANDOM_LIST_INDEX -= 1
+        if value is BACK_IMG:
+            if mConfigData.twoPageMode:
+                step = -2
             else:
-                RANDOM_LIST_INDEX += mNowImgInfo['used']
+                step = -1
+        elif value is NEXT_IMG:
+            step = mNowImgInfo['used']
+
+        if RANDOM_JUMP_IMG:
+            RANDOM_LIST_INDEX += step
             RANDOM_LIST_INDEX %= RANDOM_LIST_LENGTH
             mNowImgInfo['imgPos'] = RANDOM_LIST[RANDOM_LIST_INDEX]
         else:
-            if value is BACK_IMG:
-                mNowImgInfo['imgPos'] -= 1
-            elif value is NEXT_IMG:
-                mNowImgInfo['imgPos'] += mNowImgInfo['used']
-            elif value is JUMP_IMG:
-                mNowImgInfo['imgPos'] = jump_num
+            mNowImgInfo['imgPos'] += step
+    mNowImgInfo['direct'] = value
+    mNowImgInfo['refresh'] = True
+    changeImgLock.release()
+
+def changePicSingle(value):
+    global changeImgLock
+    global mNowImgInfo
+    changeImgLock.acquire()
+    mNowImgInfo['step'] = 1
+    if value is BACK_IMG:
+        mNowImgInfo['imgPos'] -= 1
+    elif value is NEXT_IMG:
+        mNowImgInfo['imgPos'] += 1
+    mNowImgInfo['direct'] = value
     mNowImgInfo['refresh'] = True
     changeImgLock.release()
 
@@ -1524,8 +1599,10 @@ def changeFile(direct, jump_file=0):
 
 def mouseRightEvent(event):
     global rightMenu
+    # global RIGHT_MENU_VISIBLE
     rightMenu.unpost()
     rightMenu.post(event.x_root, event.y_root)
+    # RIGHT_MENU_VISIBLE = True
 
 def mouseEvent(ev):
     global nTime
@@ -1533,7 +1610,12 @@ def mouseEvent(ev):
     global slideT
     global SLIDE_START
     global rightMenu
+    # global RIGHT_MENU_VISIBLE
     rightMenu.unpost()
+    # if RIGHT_MENU_VISIBLE:
+    #     rightMenu.unpost()
+    #     RIGHT_MENU_VISIBLE = False
+    #     return
 
     s_width = root.winfo_width()
     s_height = root.winfo_height()
@@ -1706,6 +1788,21 @@ def closeWin():
         time.sleep(0.1)
     root.destroy()
 
+def screenSizeChange(event):
+    global root
+    global SCREEN_WIDTH
+    global SCREEN_HEIGHT
+    global SCREEN_SIZE_CHANGE
+    win_w = root.winfo_width()
+    win_h = root.winfo_height()
+    if win_h != 1:
+        if SCREEN_WIDTH != win_w:
+            SCREEN_SIZE_CHANGE = True
+            SCREEN_WIDTH = win_w
+        if SCREEN_HEIGHT != win_h:
+            SCREEN_SIZE_CHANGE = True
+            SCREEN_HEIGHT = win_h
+
 '''入口'''
 if __name__ == '__main__':
     if PLATFORM == 'Linux':
@@ -1727,6 +1824,7 @@ if __name__ == '__main__':
     root.bind("<Button-3>", mouseRightEvent)
     root.bind("<Button-4>", mouseWheelEvent)
     root.bind("<Button-5>", mouseWheelEvent)
+    # root.bind('<Configure>', screenSizeChange)
     root.bind("<Key>", onKeyPress)
     root.title('图包浏览器')
     initMenu(root)
@@ -1748,6 +1846,8 @@ if __name__ == '__main__':
     nowFilePath = os.getcwd() + '/'
     mNowImgInfo = {'imgPos': 0,
                    'used': 1,
+                   'direct': NEXT_IMG,
+                   'step': 1,
                    'refresh': False,
                    'scrollX': 0,
                    'scrollY': 0,
@@ -1808,12 +1908,21 @@ if __name__ == '__main__':
         changed = False
         for key in PWD_JSON:
             if isinstance(PWD_JSON[key], str):
-                PWD_JSON[key] = {"password": PWD_JSON[key], "badfile": False}
+                PWD_JSON[key] = {"password": PWD_JSON[key], "badfile": False, "filename": '', "uri": ''}
                 changed = True
         if changed:
             t_pwd_json = json.dumps(PWD_JSON)
             with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
                 f.write(t_pwd_json)
+    try:
+        PWD_JSON.pop('defaultPassword')
+    except:
+        pass
+    for k,info in PWD_JSON.items():
+        try:
+            info['filename']
+        except:
+            PWD_JSON.update({k: {'password': info['password'], 'badfile': info['badfile'], 'filename': '', 'uri': ''}})
 
     guardTask.setDaemon(TRUE)
     loadTask = loadImgTh()

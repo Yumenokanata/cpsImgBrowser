@@ -61,8 +61,9 @@ class myTable(Canvas):
         self.titleCommand = None
         self.titlesRect = []
         self.titles = []
-        self.tableCommand = None
+        self.doubleClickCommand = None
         self.RectCache = []
+        self.showScrollBar = False
         h = self.winfo_height()
         if h != 1:
             self.height = h
@@ -303,9 +304,9 @@ class myTable(Canvas):
             data = [self.select_row, self.tableData[self.select_row]]
         return data
 
-    def setDoubleButtonCallback(self, command):
+    def setDoubleClickCallback(self, command):
         if callable(command):
-            self.tableCommand = command
+            self.doubleClickCommand = command
 
     def mouseWheel(self, event):
         if self.minScrollY == None:
@@ -385,9 +386,9 @@ class myTable(Canvas):
         else:
             self.select_row = -1
 
-        if isDoubleClick and callable(self.tableCommand):
+        if isDoubleClick and callable(self.doubleClickCommand):
             data = [index, self.tableData[index]]
-            self.tableCommand(data)
+            self.doubleClickCommand(data)
 
 class openFileDialog():
     def __init__(self, master, command=None, startPath=None):
@@ -434,14 +435,9 @@ class openFileDialog():
         print('reSortFileList ',num)
 
         self.openfileRoot.mountFrame.fileTable.cleanData()
-        if self.REVERSE_FILE_TABLE:
-            t = [0, 1]
-            self.REVERSE_FILE_TABLE = False
-        else:
-            t = [0, 1]
-            self.REVERSE_FILE_TABLE = True
-        for i in t:
-            self.openfileRoot.mountFrame.fileTable.addData(self.getFileListTable(self.nowFileList[i], filter=self.filterV.get()))
+        self.REVERSE_FILE_TABLE = not self.REVERSE_FILE_TABLE
+        self.openfileRoot.mountFrame.fileTable.addData(self.getFileListTable(self.nowFileList[0], filter=self.filterV.get()))
+        self.openfileRoot.mountFrame.fileTable.addData(self.getFileListTable(self.nowFileList[1], filter=self.filterV.get()))
 
     def backUri(self):
         t_mlist = self.nowFilePath.split('/')[:-2]
@@ -593,7 +589,7 @@ class openFileDialog():
         self.openfileRoot.mountFrame.pack(fill=BOTH, expand=1, padx=5, pady=5)
         self.openfileRoot.mountFrame.fileTable = myTable(self.openfileRoot.mountFrame, height=450)
         self.openfileRoot.mountFrame.fileTable.pack(fill=X, expand=1)
-        self.openfileRoot.mountFrame.fileTable.setDoubleButtonCallback(self.onDoubleClickFileTable)
+        self.openfileRoot.mountFrame.fileTable.setDoubleClickCallback(self.onDoubleClickFileTable)
 
         self.filterV = StringVar()
         self.openfileRoot.mountFrame.mFilterEntry = Entry(self.openfileRoot.mountFrame, textvariable=self.filterV, width=30)
@@ -823,8 +819,8 @@ class configDialog():
         master.otherFrame.scaleModeLabel.place(relx=0.45, rely=0.4, anchor=NW)
         self.scaleMode = StringVar()
         self.scaleMode.set(self.scaleModeList[self.configData.scaleMode])
-        master.otherFrame.scaleModeOptionMenu = OptionMenu(*(master.otherFrame, self.scaleMode) + tuple(self.scaleModeList))
-        master.otherFrame.scaleModeOptionMenu.place(relx=0.668, rely=0.38, relwidth=0.301, relheight=0.35, anchor=NW)
+        master.otherFrame.scaleModeCombo = ttk.Combobox(master.otherFrame, textvariable=self.scaleMode, values=self.scaleModeList)
+        master.otherFrame.scaleModeCombo.place(relx=0.668, rely=0.38, relwidth=0.301, relheight=0.35, anchor=NW)
 
     def inputSlide(self, *args):
         try:
@@ -836,6 +832,53 @@ class configDialog():
             self.configData.slideTime = slideTime
         except:
             self.slideTime.set(self.configData.slideTime)
+
+class passwordDialog():
+    def __init__(self, master, defaultPassword, filePassword, command):
+        self.command = command
+        self.defaultPassword = defaultPassword
+        self.filePassword = filePassword
+        self.changed = False
+        self.REVERSE = False
+        self.ft = Font(family='Fixdsys', size=10)
+        self.passwordRoot = tkinter.Tk()
+        self.passwordRoot.wm_attributes('-topmost', 0.5)
+        # self.passwordRoot.wm_resizable(width=False, height=False)
+        s_x = master.winfo_x()
+        s_y = master.winfo_y()
+        t = master.winfo_geometry()
+        win_w = int(t.split('x')[0])
+        win_h = int(t.split('x')[1].split('+')[0])
+        self.passwordRoot.geometry("800x600+%d+%d" % ((win_w - 800) / 2 + s_x, (win_h - 600) / 2 + s_y))
+
+        self.passwordRoot.tabNotebook = ttk.Notebook(self.passwordRoot)
+
+        self.passwordRoot.tabNotebook.pack(fill=BOTH, expand=1)
+
+        self.passwordRoot.tabNotebook.defaultTab = ttk.Frame(self.passwordRoot.tabNotebook)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable = myTable(self.passwordRoot.tabNotebook.defaultTab, height=450)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.pack(fill=X, expand=1)
+        data = self.getDataToList(filePassword)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[350, 100, 150], command=self.sortList)
+        self.passwordRoot.tabNotebook.add(self.passwordRoot.tabNotebook.defaultTab, text='保存密码')
+
+
+
+    def getDataToList(self, data):
+        t_list = []
+        for k, info in data.items():
+            t_list.append([info['filename'], info['password'], info['uri']])
+        return t_list
+
+    def sortList(self, num):
+        if num == 0:
+            self.filePassword.sort(key=lambda x: x['filename'], reverse=self.REVERSE)
+        if num == 2:
+            self.filePassword.sort(key=lambda x: x['uri'], reverse=self.REVERSE)
+
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
+        self.REVERSE = not self.REVERSE
+        self.passwordRoot.tabNotebook.defaultTab.addData(self.getDataToList(self.filePassword))
 
 # TODO:机制测试失败
 def myAskString(master, title, message):
