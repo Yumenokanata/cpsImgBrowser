@@ -83,8 +83,15 @@ class myTable(Canvas):
         self.TITLE_COLOR = '#D3D3D3'
 
     def draw(self):
+        h = self.winfo_height()
+        if h != 1 and h != self.height:
+            self.height = h
+            self.minScrollY = h - self.row * self.rowHeight - 2
+            self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
+
         self.scrollY = min(self.scrollY, 0)
         self.scrollY = max(self.scrollY, self.minScrollY)
+
         t_height = self.rowHeight
         for row in range(self.row):
             if row != self.select_row:
@@ -99,13 +106,14 @@ class myTable(Canvas):
             t_y = self.scrollY + self.titleHeight + row * self.rowHeight
             t_width = 2 + self.x_list[-1] + self.columnWidthList[-1]
             if t_y + t_height > 0:
-                if t_y > self.height + t_height * 2:
-                    for i in range(row, len(self.tableData)):
+                if t_y > self.height + t_height:
+                    for i in range(row - 1, len(self.tableData)):
                         if self.tableRect[i]:
+                            self.coords(self.tableRect[i][0], (0, -100, 100, -50))
+                            for col in self.tableRect[i][1]:
+                                self.coords(col, (0, -100))
                             self.RectCache.append(self.tableRect[i])
                             self.tableRect[i] = []
-                        else:
-                            break
                     break
                 if self.tableRect[row]:
                     self.coords(self.tableRect[row][0], (t_x,
@@ -126,7 +134,7 @@ class myTable(Canvas):
                     for i, col in enumerate(t_table[1]):
                         self.coords(col, (10 + self.x_list[i],
                                           3 + t_y))
-                        self.itemconfig(col, text=self.longStringToShort(self.tableData[row][i]))
+                        self.itemconfig(col, text=self.longStringToShort(self.tableData[row][i], self.columnWidthList[i]))
                     self.tableRect[row] = t_table
                 else:
                     t_rect = self.create_rectangle(t_x,
@@ -140,31 +148,34 @@ class myTable(Canvas):
                         t_text = self.create_text(10 + self.x_list[col],
                                                   3 + t_y,
                                                   anchor='nw',
-                                                  text=self.longStringToShort(self.tableData[row][col]))
+                                                  text=self.longStringToShort(self.tableData[row][col], self.columnWidthList[col]))
                         t_rowList.append(t_text)
-                    self.tableRect[row] = [t_rect, t_rowList, t_x, t_y, row]
+                    self.tableRect[row] = [t_rect, t_rowList]
             else:
                 if self.tableRect[row]:
+                    self.coords(self.tableRect[row][0], (0, -100, 100, -50))
+                    for col in self.tableRect[row][1]:
+                        self.coords(col, (0, -100))
                     self.RectCache.append(self.tableRect[row])
                     self.tableRect[row] = []
+        # print('self.RectCache.append: ', t)
         for col in range(1, self.column):
             self.TableLines.append(self.create_line((1 + self.x_list[col],
                                                      self.titleHeight,
                                                      1 + self.x_list[col],
                                                      self.titleHeight + self.row * self.rowHeight)))
-
         if self.height < self.row * self.rowHeight:
             self.scrollBarY =  max(self.height * (-self.scrollY / self.row / self.rowHeight) - 2, 2)
             self.coords(self.scrollBarRect, (self.rightPos, self.scrollBarY, self.rightPos + 10, self.scrollBarY + self.scrollBarHeight))
 
-    def longStringToShort(self, String):
+    def longStringToShort(self, String, width):
         try:
             t_len = len(String.encode('gbk'))
             # mode = 'gbk'
         except:
             t_len = len(String.encode('utf8'))
             # mode = 'utf8'
-        if t_len > 47:
+        if t_len > width / 20 * 3:
             # sum_len = 0
             # cut_first = 0
             # for i,s in enumerate(String):
@@ -178,10 +189,11 @@ class myTable(Canvas):
             #     sum_len += len(s.encode(mode))
             #     if sum_len > 18:
             #         cut_last = i
-            cut_len = int(18 / t_len * len(String))
+            cut_len = int(width / 24)
             return String[:cut_len] + '...' + String[-cut_len:]
         else:
             return String
+
     def resetColumnSize(self, columnWidthList):
         # self.rowHeight = rowHeight
         # self.titleHeight = titleHeight
@@ -229,20 +241,16 @@ class myTable(Canvas):
             t_text = self.create_text(10 + self.x_list[col] + self.columnWidthList[col] / 2,
                              self.titleHeight / 2,
                              anchor=CENTER,
-                             text=self.longStringToShort(self.titles[col]))
+                             text=self.longStringToShort(self.titles[col], self.columnWidthList[col]))
             self.titlesRect.append([t_rect, t_text])
 
     def cleanData(self):
         if self.tableRect:
             for row in self.tableRect:
                 if row:
-                    self.coords(row[0], (0,
-                                         -100,
-                                         100,
-                                         -50))
+                    self.coords(row[0], (0, -100, 100, -50))
                     for col in row[1]:
-                        self.coords(col, (0,
-                                          -100))
+                        self.coords(col, (0, -100))
                     self.RectCache.append(row)
         if self.TableLines:
             for t_line in self.TableLines:
@@ -278,13 +286,10 @@ class myTable(Canvas):
         h = self.winfo_height()
         if h != 1:
             self.height = h
-            self.minScrollY = h - self.row * self.rowHeight - 2
-        else:
-            self.minScrollY = None
 
         # TODO
         self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
-        self.minScrollY = self.height - self.row * self.rowHeight - 2
+        self.minScrollY = min(self.height - self.row * self.rowHeight - 2, 0)
         self.draw()
 
         self.refreshTitle(titles)
@@ -301,9 +306,13 @@ class myTable(Canvas):
             for t_line in self.TableLines:
                 self.delete(t_line)
 
+        h = self.winfo_height()
+        if h != 1:
+            self.height = h
+
         self.row += len(add_data)
         self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
-        self.minScrollY = self.height - self.row * self.rowHeight - 2
+        self.minScrollY = min(self.height - self.row * self.rowHeight - 2, 0)
         self.draw()
 
         for col in range(1, self.column):
@@ -325,28 +334,10 @@ class myTable(Canvas):
             self.doubleClickCommand = command
 
     def mouseWheel(self, event):
-        if self.minScrollY == None:
-            h = self.winfo_height()
-            if h != 1:
-                self.minScrollY = h - self.row * self.rowHeight - 2
-            else:
-                self.minScrollY = None
-                return
-        if self.minScrollY >= 0:
-            return
         if event.num == 4:
-            direct = 20
-            if self.scrollY == 0:
-                return
-            elif self.scrollY + direct >= 0:
-                direct = -self.scrollY
+            self.scrollY += 20
         elif event.num == 5:
-            direct = -20
-            if self.scrollY == self.minScrollY:
-                return
-            elif self.scrollY + direct <= self.minScrollY:
-                direct = self.minScrollY - self.scrollY
-        self.scrollY += direct
+            self.scrollY -= 20
 
         self.draw()
         self.refreshTitle()
@@ -359,7 +350,6 @@ class myTable(Canvas):
         pass
 
     def scrollBarEvent(self, event):
-        print('scrollBarEvent')
         if self.clickScrollBar:
             self.scrollY -= (event.y - self.startMotionY) / self.height * self.row * self.rowHeight
             self.startMotionY = event.y
