@@ -350,8 +350,9 @@ class guardTh(threading.Thread):
             else:
                 ChangeFileLock.release()
                 if self.imgList:
-                    if self.nowShowImgPos != mNowImgInfo['imgPos']:
+                    if mNowImgInfo['refresh']:
                         changeImgLock.acquire()
+                        mNowImgInfo['refresh'] = False
                         mNowImgInfo['imgPos'] %= len(self.imgList)
                         self.nowShowImgPos = mNowImgInfo['imgPos']
                         self.shouldRefreshImg = TRUE
@@ -428,9 +429,8 @@ class guardTh(threading.Thread):
         setImgPlace(0, 0)
         self.setImgMessage(True, imgName, imgPos)
         changeImgLock.acquire()
-        if mConfigData.scaleFitMode == SCALE_FIT_MODE_WIDTH:
-            box_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
-            scroll = (reSize[3] - box_h) / 2
+        if mConfigData.scaleFitMode == SCALE_FIT_MODE_WIDTH and win_h < reSize[3]:
+            scroll = (reSize[3] - win_h) / 2
             setImgPlace(0, scroll)
             mNowImgInfo['scrollX'] = 0
             mNowImgInfo['scrollY'] = scroll
@@ -487,13 +487,14 @@ class guardTh(threading.Thread):
             label.image = tk_img_b
             label2.configure(image=tk_img_a)
             label2.image = tk_img_a
+            self.setImgMessage(True, imgName_b + ' | ' + imgName_a, self.nowShowImgPos)
         else:
             label.configure(image=tk_img_a)
             label.image = tk_img_a
             label2.configure(image=tk_img_b)
             label2.image = tk_img_b
+            self.setImgMessage(True, imgName_a + ' | ' + imgName_b, self.nowShowImgPos)
         setImgPlace(0, 0)
-        self.setImgMessage(True, imgName_a + ' / ' + imgName_b, self.nowShowImgPos)
         return True
 
     def checkImgName(self, imgName):
@@ -1301,12 +1302,15 @@ def enableRandomJumpImg():
 
 def setTwoPageMode():
     mConfigData.twoPageMode = not mConfigData.twoPageMode
+    mNowImgInfo['refresh'] = True
 
 def scaleFitMode(mode):
     mConfigData.scaleFitMode = mode
+    mNowImgInfo['refresh'] = True
 
 def setMangaMode():
     mConfigData.mangaMode = not mConfigData.mangaMode
+    mNowImgInfo['refresh'] = True
 
 def startSlide():
     global slideT

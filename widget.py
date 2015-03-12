@@ -53,6 +53,8 @@ class myTable(Canvas):
         self.bind('<Button-4>', self.mouseWheel, add='+')
         self.bind('<Button-5>', self.mouseWheel, add='+')
         self.bind('<Button-1>', self.onClick)
+        self.bind('<B1-Motion>', self.scrollBarEvent)
+        self.bind('<ButtonRelease>', self.releaseEvent)
         self.scrollY = 0
         self.minScrollY = 0
         self.TableLines = []
@@ -63,12 +65,17 @@ class myTable(Canvas):
         self.titles = []
         self.doubleClickCommand = None
         self.RectCache = []
-        self.showScrollBar = False
         h = self.winfo_height()
         if h != 1:
             self.height = h
         else:
-            self.height = None
+            self.height = 600
+        self.showScrollBar = False
+        self.scrollBarHeight = self.height
+        self.scrollBarY = 0
+        self.clickScrollBar = False
+        self.scrollBarBgRect = None
+        self.scrollBarRect = None
 
         self.SELECT_COLOR = '#FF7F50'
         self.BLACK_COLOR = '#F5F5F5'
@@ -76,11 +83,8 @@ class myTable(Canvas):
         self.TITLE_COLOR = '#D3D3D3'
 
     def draw(self):
-        if self.height:
-            h = self.height
-        else:
-            h = 600
-
+        self.scrollY = min(self.scrollY, 0)
+        self.scrollY = max(self.scrollY, self.minScrollY)
         t_height = self.rowHeight
         for row in range(self.row):
             if row != self.select_row:
@@ -95,7 +99,7 @@ class myTable(Canvas):
             t_y = self.scrollY + self.titleHeight + row * self.rowHeight
             t_width = 2 + self.x_list[-1] + self.columnWidthList[-1]
             if t_y + t_height > 0:
-                if t_y > h + t_height:
+                if t_y > self.height + t_height * 2:
                     for i in range(row, len(self.tableData)):
                         if self.tableRect[i]:
                             self.RectCache.append(self.tableRect[i])
@@ -144,7 +148,14 @@ class myTable(Canvas):
                     self.RectCache.append(self.tableRect[row])
                     self.tableRect[row] = []
         for col in range(1, self.column):
-            self.TableLines.append(self.create_line((1 + self.x_list[col], self.titleHeight, 1 + self.x_list[col], self.titleHeight + self.row * self.rowHeight)))
+            self.TableLines.append(self.create_line((1 + self.x_list[col],
+                                                     self.titleHeight,
+                                                     1 + self.x_list[col],
+                                                     self.titleHeight + self.row * self.rowHeight)))
+
+        if self.height < self.row * self.rowHeight:
+            self.scrollBarY =  max(self.height * (-self.scrollY / self.row / self.rowHeight) - 2, 2)
+            self.coords(self.scrollBarRect, (self.rightPos, self.scrollBarY, self.rightPos + 10, self.scrollBarY + self.scrollBarHeight))
 
     def longStringToShort(self, String):
         try:
@@ -189,6 +200,13 @@ class myTable(Canvas):
                 t_x_offset += col_w
         self.columnWidthList = columnWidthList
         self.x_list = x_list
+        self.rightPos = x_list[-1] + columnWidthList[-1] + 4
+        if self.scrollBarBgRect:
+            self.delete(self.scrollBarBgRect)
+        self.scrollBarBgRect = self.create_rectangle(self.rightPos, 0, self.rightPos + 10, self.height, width=1, fill='#ffffff')
+        if self.scrollBarRect:
+            self.delete(self.scrollBarRect)
+        self.scrollBarRect = self.create_rectangle(self.rightPos, 0, self.rightPos + 10, self.height, width=2, outline='#B8B8B8', fill='#E6E6E6')
 
     def refreshTitle(self, titles=[]):
         if self.titlesRect:
@@ -265,6 +283,8 @@ class myTable(Canvas):
             self.minScrollY = None
 
         # TODO
+        self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
+        self.minScrollY = self.height - self.row * self.rowHeight - 2
         self.draw()
 
         self.refreshTitle(titles)
@@ -282,6 +302,8 @@ class myTable(Canvas):
                 self.delete(t_line)
 
         self.row += len(add_data)
+        self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
+        self.minScrollY = self.height - self.row * self.rowHeight - 2
         self.draw()
 
         for col in range(1, self.column):
@@ -291,12 +313,6 @@ class myTable(Canvas):
                                                      self.scrollY + self.titleHeight + self.row * self.rowHeight)))
 
         self.refreshTitle()
-
-        h = self.winfo_height()
-        if h != 1:
-            self.minScrollY = h - self.row * self.rowHeight - 2
-        else:
-            self.minScrollY = None
 
     def getSelectedItem(self):
         data = None
@@ -342,6 +358,16 @@ class myTable(Canvas):
         #         self.move(t_rowList[col], 0, direct)
         pass
 
+    def scrollBarEvent(self, event):
+        print('scrollBarEvent')
+        if self.clickScrollBar:
+            self.scrollY -= (event.y - self.startMotionY) / self.height * self.row * self.rowHeight
+            self.startMotionY = event.y
+            self.draw()
+
+    def releaseEvent(self, event):
+        self.clickScrollBar = False
+
     def onClick(self, event):
         self.clickEvent(event)
 
@@ -349,6 +375,12 @@ class myTable(Canvas):
         self.clickEvent(event, isDoubleClick=1)
 
     def clickEvent(self, event, isDoubleClick=0):
+        if event.x > self.rightPos:
+            if self.scrollBarY < event.y < self.scrollBarY + self.scrollBarHeight:
+                self.clickScrollBar = True
+                self.startMotionY = event.y
+            return
+
         if event.y < self.titleHeight:
             n = 0
             while event.x > self.x_list[n] + self.columnWidthList[n]:
@@ -356,7 +388,6 @@ class myTable(Canvas):
             if callable(self.titleCommand):
                 self.titleCommand(n)
             return
-
         # index = -1
         # n = 0
         # for i,t in enumerate(self.tableRect):
