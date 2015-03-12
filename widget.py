@@ -81,6 +81,7 @@ class myTable(Canvas):
         self.BLACK_COLOR = '#F5F5F5'
         self.WHITE_COLOR = 'white'
         self.TITLE_COLOR = '#D3D3D3'
+        self.ft = Font(family='Fixdsys', size=10)
 
     def draw(self):
         h = self.winfo_height()
@@ -148,7 +149,8 @@ class myTable(Canvas):
                         t_text = self.create_text(10 + self.x_list[col],
                                                   3 + t_y,
                                                   anchor='nw',
-                                                  text=self.longStringToShort(self.tableData[row][col], self.columnWidthList[col]))
+                                                  text=self.longStringToShort(self.tableData[row][col], self.columnWidthList[col]),
+                                                  font=self.ft)
                         t_rowList.append(t_text)
                     self.tableRect[row] = [t_rect, t_rowList]
             else:
@@ -165,32 +167,71 @@ class myTable(Canvas):
                                                      1 + self.x_list[col],
                                                      self.titleHeight + self.row * self.rowHeight)))
         if self.height < self.row * self.rowHeight:
-            self.scrollBarY =  max(self.height * (-self.scrollY / self.row / self.rowHeight) - 2, 2)
+            self.scrollBarY = max(self.height * (-self.scrollY / self.row / self.rowHeight) - 2, 2)
             self.coords(self.scrollBarRect, (self.rightPos, self.scrollBarY, self.rightPos + 10, self.scrollBarY + self.scrollBarHeight))
 
     def longStringToShort(self, String, width):
-        try:
-            t_len = len(String.encode('gbk'))
-            # mode = 'gbk'
-        except:
-            t_len = len(String.encode('utf8'))
-            # mode = 'utf8'
-        if t_len > width / 20 * 3:
-            # sum_len = 0
-            # cut_first = 0
-            # for i,s in enumerate(String):
-            #     sum_len += len(s.encode(mode))
-            #     if sum_len > 18:
-            #         cut_first = i
-            # sum_len = 0
-            # cut_last = 0
-            # for i in range(1, len(String)):
-            #     s = String[-i]
-            #     sum_len += len(s.encode(mode))
-            #     if sum_len > 18:
-            #         cut_last = i
-            cut_len = int(width * 3 / 20 - t_len * 0.5)
-            return String[:cut_len] + '...' + String[-cut_len:]
+        if self.ft.measure(String) > width - 20:
+            cut_len = (width - 35 - self.ft.measure('...')) / 2
+            top_string = ''
+            for s in String:
+                top_string += s
+                if self.ft.measure(top_string) > cut_len:
+                    break
+            bottom_string = ''
+            for i in range(1, len(String) + 1):
+                s = String[-i]
+                bottom_string = s + bottom_string
+                if self.ft.measure(bottom_string) > cut_len:
+                    break
+            return top_string + '...' + bottom_string
+        return String
+
+    def longStringToShort2(self, String, width):
+        length = 0.0
+        b_string = String.encode('utf-8')
+        b_string.decode('utf-8')
+        for i in b_string:
+            if i >= 128:
+                length += 0.666
+            else:
+                length += 1
+        if length > width / 20 * 2:
+            cut_len = min(int(width * 2 / 20 - 1.5), int(length / 3))
+            t_length = 0
+            for n, i in enumerate(b_string):
+                if i >= 128:
+                    t_length += 0.66
+                else:
+                    t_length += 1
+                if t_length > cut_len:
+                    t_cut_num = n
+                    break
+            n = 0
+            while True:
+                try:
+                    top_string = b_string[:t_cut_num + n].decode('utf-8')
+                    break
+                except:
+                    n += 1
+            t_length = 0
+            for i in range(1, len(b_string)):
+                b = b_string[-i]
+                if b >= 128:
+                    t_length += 0.66
+                else:
+                    t_length += 1
+                if t_length > cut_len:
+                    t_cut_num = i
+                    break
+            n = 0
+            while True:
+                try:
+                    bottom_string = b_string[-(t_cut_num + n):].decode('utf-8')
+                    break
+                except:
+                    n += 1
+            return top_string + '...' + bottom_string
         else:
             return String
 
@@ -206,7 +247,7 @@ class myTable(Canvas):
                 t_x_offset += self.rowWidth
         else:
             if self.column != len(columnWidthList):
-                raise
+                raise Exception
             for col_w in columnWidthList:
                 x_list.append(t_x_offset)
                 t_x_offset += col_w
@@ -239,9 +280,9 @@ class myTable(Canvas):
                                            outline=self.WHITE_COLOR,
                                            fill=self.TITLE_COLOR)
             t_text = self.create_text(10 + self.x_list[col] + self.columnWidthList[col] / 2,
-                             self.titleHeight / 2,
-                             anchor=CENTER,
-                             text=self.longStringToShort(self.titles[col], self.columnWidthList[col]))
+                                      self.titleHeight / 2,
+                                      anchor=CENTER,
+                                      text=self.longStringToShort(self.titles[col], self.columnWidthList[col]))
             self.titlesRect.append([t_rect, t_text])
 
     def cleanData(self):
@@ -879,13 +920,17 @@ class passwordDialog():
         self.passwordRoot.tabNotebook.defaultTab = ttk.Frame(self.passwordRoot.tabNotebook)
         self.passwordRoot.tabNotebook.defaultTab.passwordTable = myTable(self.passwordRoot.tabNotebook.defaultTab, height=450)
         self.passwordRoot.tabNotebook.defaultTab.passwordTable.pack(fill=X, expand=1)
+        self.emptyDict = {}
         data = self.getDataToList(filePassword)
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[300, 150, 250], command=self.sortList)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[350, 170, 300], command=self.sortList)
         self.passwordRoot.tabNotebook.add(self.passwordRoot.tabNotebook.defaultTab, text='保存密码')
     def getDataToList(self, data):
         t_list = []
         for k, info in data.items():
-            t_list.append([info['filename'], info['password'], info['uri']])
+            if info['password']:
+                t_list.append([info['filename'], info['password'], info['uri']])
+            else:
+                self.emptyDict.update({k: info})
         return t_list
 
     def sortList(self, num):
