@@ -189,7 +189,7 @@ class myTable(Canvas):
             #     sum_len += len(s.encode(mode))
             #     if sum_len > 18:
             #         cut_last = i
-            cut_len = int(width / 24)
+            cut_len = int(width * 3 / 20 - t_len * 0.5)
             return String[:cut_len] + '...' + String[-cut_len:]
         else:
             return String
@@ -880,11 +880,8 @@ class passwordDialog():
         self.passwordRoot.tabNotebook.defaultTab.passwordTable = myTable(self.passwordRoot.tabNotebook.defaultTab, height=450)
         self.passwordRoot.tabNotebook.defaultTab.passwordTable.pack(fill=X, expand=1)
         data = self.getDataToList(filePassword)
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[350, 100, 150], command=self.sortList)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[300, 150, 250], command=self.sortList)
         self.passwordRoot.tabNotebook.add(self.passwordRoot.tabNotebook.defaultTab, text='保存密码')
-
-
-
     def getDataToList(self, data):
         t_list = []
         for k, info in data.items():

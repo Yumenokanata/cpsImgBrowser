@@ -396,7 +396,7 @@ class guardTh(threading.Thread):
                     self.loadSinglePage(self.nowShowImgPos)
                 mNowImgInfo['step'] = 2
 
-                print("Sum Load Img Time: " + str(time.time() - st))
+                # print("Sum Load Img Time: " + str(time.time() - st))
                 mImgLoadQueueLock.release()
 
     def loadSinglePage(self, imgPos):
