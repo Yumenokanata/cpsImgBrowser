@@ -37,7 +37,7 @@ class fileInfo():
 
 class myTable(Canvas):
 
-    def __init__(self, master=None, rowWidth=170, rowHeight=25, titleHeight=25, column=0, row=0, data=[], height=450):
+    def __init__(self, master=None, rowWidth=170, rowHeight=25, titleHeight=25, column=0, row=0, data=[], height=450, font=None, bg='#ffffff'):
         Canvas.__init__(self, master, height=height)
         self.column = column
         self.row = row
@@ -64,6 +64,7 @@ class myTable(Canvas):
         self.titlesRect = []
         self.titles = []
         self.doubleClickCommand = None
+        self.onClickCommand = None
         self.RectCache = []
         h = self.winfo_height()
         if h != 1:
@@ -81,14 +82,19 @@ class myTable(Canvas):
         self.BLACK_COLOR = '#F5F5F5'
         self.WHITE_COLOR = 'white'
         self.TITLE_COLOR = '#D3D3D3'
-        self.ft = Font(family='Fixdsys', size=10)
+        self.bg = self.create_rectangle(0, 0, 450, self.height, fill=bg)
+        if font:
+            self.ft = font
+        else:
+            self.ft = Font(family='Fixdsys', size=10)
 
     def draw(self):
         h = self.winfo_height()
         if h != 1 and h != self.height:
             self.height = h
-            self.minScrollY = h - self.row * self.rowHeight - 2
+            self.minScrollY = min(h - self.row * self.rowHeight - 2, 0)
             self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
+            self.coords(self.bg, 0, 0, self.rightPos, self.height)
 
         self.scrollY = min(self.scrollY, 0)
         self.scrollY = max(self.scrollY, self.minScrollY)
@@ -327,6 +333,7 @@ class myTable(Canvas):
         h = self.winfo_height()
         if h != 1:
             self.height = h
+        self.coords(self.bg, 0, 0, self.rightPos, self.height)
 
         # TODO
         self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
@@ -350,6 +357,7 @@ class myTable(Canvas):
         h = self.winfo_height()
         if h != 1:
             self.height = h
+        self.coords(self.bg, 0, 0, self.rightPos, self.height)
 
         self.row += len(add_data)
         self.scrollBarHeight = self.height * min(1, self.height / self.row / self.rowHeight)
@@ -373,6 +381,10 @@ class myTable(Canvas):
     def setDoubleClickCallback(self, command):
         if callable(command):
             self.doubleClickCommand = command
+
+    def setOnClickCallback(self, command):
+        if callable(command):
+            self.onClickCommand = command
 
     def mouseWheel(self, event):
         if event.num == 4:
@@ -451,6 +463,9 @@ class myTable(Canvas):
         if isDoubleClick and callable(self.doubleClickCommand):
             data = [index, self.tableData[index]]
             self.doubleClickCommand(data)
+        elif callable(self.onClickCommand):
+            data = [index, self.tableData[index]]
+            self.onClickCommand(data)
 
 class openFileDialog():
     def __init__(self, master, command=None, startPath=None):
@@ -578,7 +593,6 @@ class openFileDialog():
         return fileInfoTable
 
     def setFileFilter(self, event):
-        print(self.filterV.get())
         self.openfileRoot.mountFrame.fileTable.cleanData()
         for i in (0, 1):
             t_b = self.getFileListTable(self.nowFileList[i], filter=self.filterV.get())
@@ -903,7 +917,7 @@ class passwordDialog():
         self.changed = False
         self.REVERSE = False
         self.ft = Font(family='Fixdsys', size=10)
-        self.passwordRoot = tkinter.Tk()
+        self.passwordRoot = Toplevel(master)
         self.passwordRoot.wm_attributes('-topmost', 0.5)
         # self.passwordRoot.wm_resizable(width=False, height=False)
         s_x = master.winfo_x()
@@ -915,33 +929,136 @@ class passwordDialog():
 
         self.passwordRoot.tabNotebook = ttk.Notebook(self.passwordRoot)
 
-        self.passwordRoot.tabNotebook.pack(fill=BOTH, expand=1)
+        self.passwordRoot.tabNotebook.place(x=5, y=5, relwidth=0.987, relheight=0.985)
 
-        self.passwordRoot.tabNotebook.defaultTab = ttk.Frame(self.passwordRoot.tabNotebook)
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable = myTable(self.passwordRoot.tabNotebook.defaultTab, height=450)
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable.pack(fill=X, expand=1)
+        self.passwordRoot.tabNotebook.defaultTab = Frame(self.passwordRoot.tabNotebook)
+        ft = Font(family='Fixdsys', size=9)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable = myTable(self.passwordRoot.tabNotebook.defaultTab, height=400)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.place(x=20, y=10, relwidth=0.95, anchor=NW)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setOnClickCallback(self.onSelectedItem)
         self.emptyDict = {}
-        data = self.getDataToList(filePassword)
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=data, titles=['文件名', '密码', '路径'], columnWidthList=[350, 170, 300], command=self.sortList)
+        self.dataList = self.getDataToList(filePassword)
+        self.passwordRoot.tabNotebook.defaultTab.passwordTable.setData(data=self.dataList, titles=['文件名', '密码', '路径'], columnWidthList=[370, 150, 220], command=self.sortList)
+
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame = LabelFrame(self.passwordRoot.tabNotebook.defaultTab, text='信息')
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                          text='文件名:',
+                                                                                          wraplength=270,
+                                                                                          font=ft,
+                                                                                          justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel.grid(row=0, column=0, padx=10, sticky=NW)
+        self.filenameVar = StringVar()
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                     textvariable=self.filenameVar,
+                                                                                     wraplength=360,
+                                                                                     font=ft,
+                                                                                     justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel.grid(row=0, column=1, sticky=NW)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                          text='密码:',
+                                                                                          wraplength=270,
+                                                                                          font=ft,
+                                                                                          justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel.grid(row=1, column=0, padx=10, sticky=NW)
+        self.passwordVar = StringVar()
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                     textvariable=self.passwordVar,
+                                                                                     wraplength=360,
+                                                                                     font=ft,
+                                                                                     justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel.grid(row=1, column=1, padx=10, sticky=NW)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                          text='位置:',
+                                                                                          wraplength=270,
+                                                                                          font=ft,
+                                                                                          justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameTitleLabel.grid(row=2, column=0, padx=10, sticky=NW)
+        self.uriVar = StringVar()
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel = ttk.Label(self.passwordRoot.tabNotebook.defaultTab.infoFrame,
+                                                                                     textvariable=self.uriVar,
+                                                                                     wraplength=360,
+                                                                                     font=ft,
+                                                                                     justify=LEFT)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.filenameLabel.grid(row=2, column=1, sticky=NW)
+        self.passwordRoot.tabNotebook.defaultTab.infoFrame.place(x=20, y=420, width=400, height=140, anchor=NW)
+
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame = Frame(self.passwordRoot.tabNotebook.defaultTab)
+        self.filterV = StringVar()
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.filterEntry = Entry(self.passwordRoot.tabNotebook.defaultTab.buttonFrame,
+                                                                                 textvariable=self.filterV,
+                                                                                 width=30)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.filterEntry.bind('<KeyRelease>', self.setFileFilter)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.filterEntry.place(x=0, y=0, anchor=NW)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton = ttk.Button(self.passwordRoot.tabNotebook.defaultTab.buttonFrame,
+                                                                                  text='清空密码',
+                                                                                  width=10)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton.place(x=0, y=30, anchor=NW)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton = ttk.Button(self.passwordRoot.tabNotebook.defaultTab.buttonFrame,
+                                                                                  text='删除密码',
+                                                                                  width=10)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton.place(x=120, y=30, anchor=NW)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton = ttk.Button(self.passwordRoot.tabNotebook.defaultTab.buttonFrame,
+                                                                                  text='取消',
+                                                                                  width=10)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton.place(relx=1, rely=1, x=-160, y=-12, anchor=SE)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton = ttk.Button(self.passwordRoot.tabNotebook.defaultTab.buttonFrame,
+                                                                                  text='确认',
+                                                                                  width=10)
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.cleanButton.place(relx=1, rely=1, x=-10, y=-12, anchor=SE)
+
+        self.passwordRoot.tabNotebook.defaultTab.buttonFrame.place(x=440, y=430, width=340, height=140, anchor=NW)
+
         self.passwordRoot.tabNotebook.add(self.passwordRoot.tabNotebook.defaultTab, text='保存密码')
+
+        self.passwordRoot.mainloop()
+
     def getDataToList(self, data):
         t_list = []
         for k, info in data.items():
-            if info['password']:
+            if info['filename'] and info['password']:
                 t_list.append([info['filename'], info['password'], info['uri']])
             else:
                 self.emptyDict.update({k: info})
         return t_list
 
+    def onSelectedItem(self, data):
+        self.filenameVar.set(data[1][0])
+        self.passwordVar.set(data[1][1])
+        self.uriVar.set(data[1][2])
+
+    def setFileFilter(self, event):
+        filter_word = self.filterV.get()
+        if filter_word:
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.addData(self.filter(filter_word))
+        else:
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.addData(self.dataList)
+
+    def filter(self, filter_word):
+        t_list = []
+        for l in self.dataList:
+            try:
+                l[0].index(filter_word)
+                t_list.append(l)
+            except:
+                continue
+        return t_list
+
     def sortList(self, num):
         if num == 0:
-            self.filePassword.sort(key=lambda x: x['filename'], reverse=self.REVERSE)
+            self.dataList.sort(key=lambda x: x[0], reverse=self.REVERSE)
         if num == 2:
-            self.filePassword.sort(key=lambda x: x['uri'], reverse=self.REVERSE)
+            self.dataList.sort(key=lambda x: x[2], reverse=self.REVERSE)
 
-        self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
         self.REVERSE = not self.REVERSE
-        self.passwordRoot.tabNotebook.defaultTab.addData(self.getDataToList(self.filePassword))
+        filter_word = self.filterV.get()
+        if filter_word:
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.addData(self.filter(filter_word))
+        else:
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.cleanData()
+            self.passwordRoot.tabNotebook.defaultTab.passwordTable.addData(self.dataList)
 
 # TODO:机制测试失败
 def myAskString(master, title, message):
