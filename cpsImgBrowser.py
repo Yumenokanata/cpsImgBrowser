@@ -67,6 +67,9 @@ MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
 MANAGE_BAR_BUTTON_WIDTH = 20
 MANAGE_BAR_LIST_WIDTH = 200
 
+USE_FAVORITE_LIST = 1
+USE_FILE_LIST = 2
+
 NONE = 0
 NEAREST = 0
 ANTIALIAS = 1
@@ -251,7 +254,7 @@ class guardTh(threading.Thread):
         global ChangeFileLock
         global ChangeFileFlag
         global willLoadImgQueue
-        global FILE_LIST
+        global OPEN_FILE_LIST
         global root
         global label
         global label2
@@ -260,20 +263,20 @@ class guardTh(threading.Thread):
         global InfoMessage
         global mConfigData
         global manageChecked
-
-        global nTime
-        nTime = time.time()
+        global refreshManageBar
 
         while self.live:
             time.sleep(0.08)
             ChangeFileLock.acquire()
             if not ChangeFileFlag["direct"] is NOCHANGE_FILE:
                 t_direct = ChangeFileFlag["direct"]
-                if not FILE_LIST:
+                if not OPEN_FILE_LIST:
                     self.nowFileInfo.FilePos = -1
                     ChangeFileFlag["direct"] = NOCHANGE_FILE
                     mNowFileInfo['filename'] = ''
                     mNowFileInfo['uri'] = ''
+                    mNowFileInfo['sumImgNum'] = 0
+                    mNowFileInfo['fileClass'] = None
                     ChangeFileLock.release()
                     InfoMessage[IMG_NAME_MESSAGE].set('')
                     InfoMessage[IMG_NUM_MESSAGE].set('')
@@ -301,7 +304,7 @@ class guardTh(threading.Thread):
                     mImgLoadQueueLock.release()
                 else:
                     if not t_direct is CHANGE_FILE:
-                        FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
+                        OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
                     self.nowShowImgPos = 0
                     if t_direct is JUMP_FILE:
                         self.nowFileInfo.FilePos = ChangeFileFlag["willFilePos"]
@@ -312,7 +315,7 @@ class guardTh(threading.Thread):
                     ChangeFileLock.release()
                     InfoMessage[IMG_NAME_MESSAGE].set('')
                     InfoMessage[IMG_NUM_MESSAGE].set('')
-                    InfoMessage[FILE_NUM_MESSAGE].set('Loading/%d' % (len(FILE_LIST)))
+                    InfoMessage[FILE_NUM_MESSAGE].set('Loading/%d' % (len(OPEN_FILE_LIST)))
                     InfoMessage[FILE_NAME_MESSAGE].set('Loading')
                     mImgLoadQueueLock.acquire()
                     if self.openFile(t_direct) is FILE_CLASS:
@@ -322,13 +325,15 @@ class guardTh(threading.Thread):
                         t_file_class = CPS_CLASS
                         self.imgList = self.getImageList(self.nowFileInfo.File)
                     if not self.nowShowImgPos:
-                        self.nowShowImgPos = FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
-                    mNowFileInfo['filename'] = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
-                    mNowFileInfo['uri'] = FILE_LIST[self.nowFileInfo.FilePos]["fileUri"]
+                        self.nowShowImgPos = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
+                    mNowFileInfo['filename'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["filename"]
+                    mNowFileInfo['uri'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["fileUri"]
+                    mNowFileInfo['sumImgNum'] = self.imgNum
+                    mNowFileInfo['fileClass'] = t_file_class
 
                     # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                     # print("Load File Time: " + str(time.time() - st1))
-                    self.nowFileInfo.Filename = FILE_LIST[self.nowFileInfo.FilePos]["filename"]
+                    self.nowFileInfo.Filename = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["filename"]
                     try:
                         self.nowFileInfo.Filename = self.nowFileInfo.Filename.encode("cp437").decode("gbk")
                     except:
@@ -351,6 +356,7 @@ class guardTh(threading.Thread):
                         }
                     self.addQueue(self.nowShowImgPos)
                     mImgLoadQueueLock.release()
+                refreshManageBar = True
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
                     for info in self.imgList:
@@ -361,9 +367,6 @@ class guardTh(threading.Thread):
                         except:
                             pass
                         root.mainFrame.manageFrame.manageList.insert(END, fn)
-                elif manageChecked == 0:
-                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
             else:
                 ChangeFileLock.release()
                 if self.imgList:
@@ -377,6 +380,22 @@ class guardTh(threading.Thread):
                         mImgLoadQueueLock.acquire()
                         self.addQueue(self.nowShowImgPos)
                         mImgLoadQueueLock.release()
+
+            if refreshManageBar:
+                refreshManageBar = False
+                if manageChecked == 0:
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+                elif manageChecked == 1:
+                    root.mainFrame.manageFrame.manageList.delete(0, END)
+                    for info in self.imgList:
+                        fn = info.filename.replace('\\', '/')
+                        fn = fn.split('/')[-1]
+                        try:
+                            fn = fn.encode("cp437").decode("gbk")
+                        except:
+                            pass
+                        root.mainFrame.manageFrame.manageList.insert(END, fn)
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 if mConfigData.twoPageMode:
@@ -542,12 +561,12 @@ class guardTh(threading.Thread):
             label['text'] = "Bad Image"
             InfoMessage[IMG_NAME_MESSAGE].set(imgName)
             InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (imgPos + 1, self.imgNum))
-            InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)))
+            InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)))
             InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
         else:
             setMessage(imgName,
                        '%d/%d' % (imgPos + 1, self.imgNum),
-                       '%d/%d' % (self.nowFileInfo.FilePos + 1, len(FILE_LIST)),
+                       '%d/%d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)),
                        self.nowFileInfo.Filename)
 
     def getFitBoxSize(self, showImg, box_x, box_y, mode):
@@ -834,37 +853,37 @@ class guardTh(threading.Thread):
         t_list[y] = temp_value
 
     def nextCanReadFile(self, direct, now_file_pos):
-        global FILE_LIST
+        global OPEN_FILE_LIST
         if direct is NEXT_FILE:
             now_file_pos += 1
         elif direct is BACK_FILE:
             now_file_pos -= 1
-        now_file_pos %= len(FILE_LIST)
-        while FILE_LIST[now_file_pos]["CanRead"] is False:
+        now_file_pos %= len(OPEN_FILE_LIST)
+        while OPEN_FILE_LIST[now_file_pos]["CanRead"] is False:
             if direct is BACK_FILE:
                 now_file_pos -= 1
             else:
                 now_file_pos += 1
-            now_file_pos %= len(FILE_LIST)
+            now_file_pos %= len(OPEN_FILE_LIST)
         return now_file_pos
 
     def openFile(self, direct):
         global st1
         st1 = time.time()
-        global FILE_LIST
+        global OPEN_FILE_LIST
         global PWD_JSON
 
         file_pos = self.nextCanReadFile(direct, self.nowFileInfo.FilePos)
 
-        if FILE_LIST[file_pos]["fileClass"] is FILE_CLASS:
-            self.nowFileInfo.File = FILE_LIST[file_pos]["fileUri"]
+        if OPEN_FILE_LIST[file_pos]["fileClass"] is FILE_CLASS:
+            self.nowFileInfo.File = OPEN_FILE_LIST[file_pos]["fileUri"]
             self.nowFileInfo.FilePos = file_pos
             self.nowFileInfo.FileClass = FILE_CLASS
             return FILE_CLASS
         return_fruit = False
         # print(FILE_LIST[file_pos]["filename"])
-        filename = FILE_LIST[file_pos]["filename"]
-        file_uri = FILE_LIST[file_pos]["fileUri"]
+        filename = OPEN_FILE_LIST[file_pos]["filename"]
+        file_uri = OPEN_FILE_LIST[file_pos]["fileUri"]
         if filename[-3:].lower() == 'rar':
             return_fruit = self.openRarFile(file_pos)
         elif filename[-3:].lower() == 'zip':
@@ -876,10 +895,10 @@ class guardTh(threading.Thread):
                 PWD_JSON[file_md5]
             except:
                 PWD_JSON.update({file_md5:{"password": "", "badfile": True, "filename": filename, "uri": file_uri}})
-            FILE_LIST[file_pos]["CanRead"] = False
+            OPEN_FILE_LIST[file_pos]["CanRead"] = False
             file_pos = self.nextCanReadFile(direct, file_pos)
-            filename = FILE_LIST[file_pos]["filename"]
-            file_uri = FILE_LIST[file_pos]["fileUri"]
+            filename = OPEN_FILE_LIST[file_pos]["filename"]
+            file_uri = OPEN_FILE_LIST[file_pos]["fileUri"]
             if filename[-3:].lower() == 'rar':
                 return_fruit = self.openRarFile(file_pos)
             elif filename[-3:].lower() == 'zip':
@@ -920,12 +939,12 @@ class guardTh(threading.Thread):
         return return_fruit
 
     def openZipFile(self, _file_pos):
-        global FILE_LIST
+        global OPEN_FILE_LIST
         global PWD_JSON
         global mConfigData
 
-        _filename = FILE_LIST[_file_pos]["filename"]
-        _file_uri = FILE_LIST[_file_pos]["fileUri"]
+        _filename = OPEN_FILE_LIST[_file_pos]["filename"]
+        _file_uri = OPEN_FILE_LIST[_file_pos]["fileUri"]
 
         if not os.path.exists(_file_uri + _filename):
             print("error:fileURI not exists")
@@ -1000,12 +1019,12 @@ class guardTh(threading.Thread):
         return t_cps_file
 
     def openRarFile(self, _file_pos):
-        global FILE_LIST
+        global OPEN_FILE_LIST
         global PWD_JSON
         global mConfigData
 
-        _filename = FILE_LIST[_file_pos]["filename"]
-        _file_uri = FILE_LIST[_file_pos]["fileUri"]
+        _filename = OPEN_FILE_LIST[_file_pos]["filename"]
+        _file_uri = OPEN_FILE_LIST[_file_pos]["fileUri"]
 
         if not os.path.exists(_file_uri + _filename):
             print("error:fileURI not exists")
@@ -1186,8 +1205,23 @@ def rotateImg(MODE):
     label.image = img
     print(img)
 
+def changeFileListFrom(index=0, useFileList=True):
+    global FILE_LIST
+    global OPEN_FILE_LIST
+    global mFileListMode
+    if useFileList and mFileListMode is not USE_FILE_LIST:
+        mFileListMode = USE_FILE_LIST
+        OPEN_FILE_LIST = FILE_LIST
+        changeFile(CHANGE_FILE, index)
+    elif not useFileList and mFileListMode is not USE_FAVORITE_LIST:
+        mFileListMode = USE_FAVORITE_LIST
+        OPEN_FILE_LIST = FAVORITE_LIST
+        changeFile(CHANGE_FILE, index)
+
 def changeFileFromDialog(path, imgPos=0, filename=''):
     global FILE_LIST
+    global OPEN_FILE_LIST
+    global mFileListMode
     global label
     global label2
     global ChangeFileFlag
@@ -1197,6 +1231,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     label.configure(image="")
     label2.configure(image="")
     label['text'] = "Loading"
+    mFileListMode = USE_FILE_LIST
 
     print('path', path)
     nowFilePath = path
@@ -1219,16 +1254,17 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
 
     ChangeFileLock.acquire()
     FILE_LIST = t_file_list
+    OPEN_FILE_LIST = t_file_list
     ChangeFileFlag["direct"] = CHANGE_FILE
     ChangeFileFlag["willFilePos"] = t_nowFilePos
     ChangeFileFlag["imgPos"] = imgPos
     ChangeFileLock.release()
 
     root.mainFrame.manageFrame.manageList.delete(0, END)
-    for info in FILE_LIST:
+    for info in OPEN_FILE_LIST:
         root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-
+    print(path + '     ' + filename)
     if not t_file_list:
         showwarning(title="对不起", message="该文件夹下没有可用文件")
         label['text'] = "No File"
@@ -1378,10 +1414,10 @@ def setPasswordConfig(defaultPassword, filePassword):
     if filePassword:
         global PWD_JSON
         PWD_JSON = filePassword
-        # if mConfigData.saveFilePassword:
-        #     t_pwd_json = json.dumps(PWD_JSON)
-        #     with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
-        #         f.write(t_pwd_json)
+        if mConfigData.saveFilePassword:
+            t_pwd_json = json.dumps(PWD_JSON)
+            with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
+                f.write(t_pwd_json)
 
     if defaultPassword:
         if defaultPassword == [0]:
@@ -1389,6 +1425,21 @@ def setPasswordConfig(defaultPassword, filePassword):
         else:
             mConfigData.defaultPassword = defaultPassword
     print('setPasswordConfig')
+
+def addFavorite():
+    global FAVORITE_LIST
+    t_filename = mNowFileInfo['filename']
+    t_uri = mNowFileInfo['uri']
+    t_sum = mNowFileInfo['sumImgNum']
+    t_class = mNowFileInfo['fileClass']
+    if t_filename:
+        try:
+            FAVORITE_LIST.index({'filename': t_filename, 'fileUri': t_uri, "fileClass": t_class, 'sumImgNum': t_sum, "CanRead": True, "CurrentPos": 0})
+        except:
+            FAVORITE_LIST.append({'filename': t_filename, 'fileUri': t_uri, "fileClass": t_class, 'sumImgNum': t_sum, "CanRead": True, "CurrentPos": 0})
+            t_favorite_json = json.dumps(FAVORITE_LIST)
+            with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
+                f.write(t_favorite_json)
 
 def initMenu(master):
     global mTwoViewMode
@@ -1468,9 +1519,9 @@ def initMouseRightMenu(master):
     global rightMenu
     rightMenu = Menu(master)
 
+    rightMenu.add_command(label="收藏", command=addFavorite)
     rightMenu.add_command(label="下一页", command=lambda: changePicSingle(NEXT_IMG))
     rightMenu.add_command(label="上一页", command=lambda: changePicSingle(BACK_IMG))
-    rightMenu.add_command(label="文件属性...", command=showInfoOfFile)
     rightMenu.add_separator()
     global mTwoViewMode
     rightMenu.add_checkbutton(variable=mTwoViewMode, label="双页模式", command=setTwoPageMode)
@@ -1479,9 +1530,9 @@ def initMouseRightMenu(master):
     global mRandomSlide
     rightMenu.add_checkbutton(variable=mRandomSlide, label="随机模式", command=enableRandomJumpImg)
     rightMenu.add_separator()
-    rightMenu.add_command(label="文件跳转...", command=fileJump)
     rightMenu.add_command(label="文件随机跳转", command=fileRandomJump)
     rightMenu.add_command(label="图片跳转...", command=imgJump)
+    rightMenu.add_command(label="文件属性...", command=showInfoOfFile)
 
 def initMessage(master):
     global InfoMessage
@@ -1635,7 +1686,7 @@ def changeFile(direct, jump_file=0):
     ChangeFileLock.acquire()
     ChangeFileFlag["direct"] = direct
     ChangeFileFlag['imgPos'] = 0
-    if direct is JUMP_FILE:
+    if direct is JUMP_FILE or direct is CHANGE_FILE:
         ChangeFileFlag["willFilePos"] = jump_file
     ChangeFileLock.release()
 
@@ -1666,23 +1717,15 @@ def manageButtonEvent(index):
         for info in FILE_LIST:
             root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
         root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-        global guardTask
-        root.mainFrame.manageFrame.manageList.selection_set(guardTask.nowFileInfo.FilePos)
+        global refreshManageBar
+        refreshManageBar = True
     elif index == 1:
-        global guardTask
-        root.mainFrame.manageFrame.manageList.delete(0, END)
-        for info in guardTask.imgList:
-            fn = info.filename.replace('\\', '/')
-            fn = fn.split('/')[-1]
-            try:
-                fn = fn.encode("cp437").decode("gbk")
-            except:
-                pass
-            root.mainFrame.manageFrame.manageList.insert(END, fn)
+        # global refreshManageBar
+        refreshManageBar = True
     elif index == 2:
-        global FAVORITE_JSON
+        global FAVORITE_LIST
         root.mainFrame.manageFrame.manageList.delete(0, END)
-        for info in FAVORITE_JSON:
+        for info in FAVORITE_LIST:
             root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
 
 def showManageList(show):
@@ -1799,7 +1842,7 @@ def fileJump():
     try:
         jump_num = int(jump_num)
         jump_num = max([1, jump_num])
-        jump_num = min([len(FILE_LIST), jump_num])
+        jump_num = min([len(OPEN_FILE_LIST), jump_num])
         changeFile(JUMP_FILE, jump_file=jump_num - 1)
     except:
         showerror(title="错误", message="输入错误！")
@@ -1815,7 +1858,7 @@ def imgJump():
 
 def fileRandomJump():
     if askquestion(title="随机跳转", message="是否随机跳转到一个压缩包?") == YES:
-        jump_num = random.randint(0, len(FILE_LIST))
+        jump_num = random.randint(0, len(OPEN_FILE_LIST))
         changeFile(JUMP_FILE, jump_file=jump_num)
 
 def onKeyPress(ev):
@@ -1927,10 +1970,19 @@ def screenSizeChange(event):
             SCREEN_HEIGHT = win_h
 
 def selectManageList(event):
+    global mFileListMode
     if manageChecked == 0:
-        changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
+        if mFileListMode == USE_FILE_LIST:
+            changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
+        else:
+            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0])
     elif manageChecked == 1:
         ShowPic(JUMP_IMG, root.mainFrame.manageFrame.manageList.curselection()[0])
+    elif manageChecked == 2:
+        if mFileListMode == USE_FAVORITE_LIST:
+            changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
+        else:
+            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], False)
 
 '''入口'''
 if __name__ == '__main__':
@@ -1942,6 +1994,7 @@ if __name__ == '__main__':
         KEY_CODE = _KeyCode('Windows')
 
     mConfigData = getConfigFromFile()
+    mFileListMode = USE_FILE_LIST
 
     root = tk.Tk()
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2))
@@ -1996,6 +2049,8 @@ if __name__ == '__main__':
                         root.mainFrame.manageFrame.picButton,
                         root.mainFrame.manageFrame.favoriteButton,
                         root.mainFrame.manageFrame.bookmarkButton]
+
+    refreshManageBar = False
     manageListVar = StringVar()
     root.mainFrame.manageFrame.manageList = Listbox(root.mainFrame.manageFrame, selectmode=SINGLE, listvariable=manageListVar, selectbackground='#FF7F50')
     root.mainFrame.manageFrame.listScrollBar = Scrollbar(root.mainFrame.manageFrame)
@@ -2033,8 +2088,9 @@ if __name__ == '__main__':
                    'imgSize': [0, 0],
                    'boxSize': [0, 0]}
     FILE_LIST = []
+    OPEN_FILE_LIST = []
     ChangeFileFlag = {"nowFilePos": 0, "direct": NOCHANGE_FILE, 'imgPos': 0}
-    mNowFileInfo = {'filename': '', 'uri': '', 'imgPos': 0}
+    mNowFileInfo = {'filename': '', 'uri': '', 'imgPos': 0, 'fileClass': None, 'sumImgNum': 0}
     willLoadImgQueue = _NONE
 
     guardTask = guardTh()
@@ -2060,10 +2116,11 @@ if __name__ == '__main__':
 
         FILE_LIST = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
         sorted(FILE_LIST, key=lambda x: x['filename'])
+        OPEN_FILE_LIST = FILE_LIST
         ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE, 'imgPos': 0}
 
         try:
-            guardTask.nowFilePos = FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": TRUE})
+            guardTask.nowFilePos = OPEN_FILE_LIST.index({"filename": t_file_name, "fileUri": t_file_uri, "fileClass":CPS_CLASS, "CanRead": True, "CurrentPos": 0})
         except:
             guardTask.nowFilePos = 0
     elif mConfigData.restore and mConfigData.restoreData['filename']:
@@ -2085,15 +2142,15 @@ if __name__ == '__main__':
 
     try:
         with open('.' + FILE_SIGN + 'favorite.json', 'r') as f:
-            pwdJson = f.read()
+            favoriteJson = f.read()
     except:
         with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
             f.write('')
         favoriteJson = ''
     try:
-        FAVORITE_JSON = json.JSONDecoder().decode(favoriteJson)
+        FAVORITE_LIST = json.JSONDecoder().decode(favoriteJson)
     except:
-        FAVORITE_JSON = {}
+        FAVORITE_LIST = []
 
     # 对旧版本保存的密码文件兼容
     if PWD_JSON:
