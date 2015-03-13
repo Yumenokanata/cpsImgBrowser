@@ -383,7 +383,7 @@ class guardTh(threading.Thread):
 
             if refreshManageBar:
                 refreshManageBar = False
-                if manageChecked == 0:
+                if manageChecked == 0 and mFileListMode is USE_FILE_LIST:
                     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
                     root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
                 elif manageChecked == 1:
@@ -396,6 +396,9 @@ class guardTh(threading.Thread):
                         except:
                             pass
                         root.mainFrame.manageFrame.manageList.insert(END, fn)
+                elif manageChecked == 2 and mFileListMode is USE_FAVORITE_LIST:
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 if mConfigData.twoPageMode:
@@ -452,6 +455,8 @@ class guardTh(threading.Thread):
             win_w = 800
             win_h = 600
         t_showImg = self.imgCache[self.nowShowImgPos]
+        if mNowImgInfo['rotate']:
+            t_showImg = t_showImg.rotate(mNowImgInfo['rotate'])
         reSize = self.getFitBoxSize(t_showImg, win_w, win_h, mConfigData.scaleFitMode)
         if not reSize:
             self.setImgMessage(False, imgName, imgPos)
@@ -483,6 +488,7 @@ class guardTh(threading.Thread):
         mNowImgInfo['imgSize'] = [reSize[0], reSize[1]]
         mNowImgInfo['boxSize'] = [reSize[2], reSize[3]]
         mNowImgInfo['used'] = 1
+        mNowImgInfo['rotate'] = 0
         changeImgLock.release()
         return True
 
@@ -1193,17 +1199,13 @@ def fileDialog(master, MODE):
     global nowFilePath
     openFileDialog(master, command=changeFileFromDialog, startPath=nowFilePath)
 
-# TODO
 def rotateImg(MODE):
-    print(MODE)
-    global label
-    p_img = label.image
-    img = PIL.ImageTk.getimage(p_img)
-    img.rotate(90)
-    img = PIL.ImageTk.PhotoImage(img)
-    label.configure(image=img)
-    label.image = img
-    print(img)
+    global rotateModeVar
+    changeImgLock.acquire()
+    mNowImgInfo['rotate'] = MODE * 90
+    mNowImgInfo['refresh'] = True
+    changeImgLock.release()
+    rotateModeVar.set(MODE)
 
 def changeFileListFrom(index=0, useFileList=True):
     global FILE_LIST
@@ -1233,7 +1235,6 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     label['text'] = "Loading"
     mFileListMode = USE_FILE_LIST
 
-    print('path', path)
     nowFilePath = path
     if filename:
         t_file_name = filename
@@ -1264,7 +1265,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     for info in OPEN_FILE_LIST:
         root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-    print(path + '     ' + filename)
+
     if not t_file_list:
         showwarning(title="对不起", message="该文件夹下没有可用文件")
         label['text'] = "No File"
@@ -1424,7 +1425,6 @@ def setPasswordConfig(defaultPassword, filePassword):
             mConfigData.defaultPassword = []
         else:
             mConfigData.defaultPassword = defaultPassword
-    print('setPasswordConfig')
 
 def addFavorite():
     global FAVORITE_LIST
@@ -1433,13 +1433,32 @@ def addFavorite():
     t_sum = mNowFileInfo['sumImgNum']
     t_class = mNowFileInfo['fileClass']
     if t_filename:
-        try:
-            FAVORITE_LIST.index({'filename': t_filename, 'fileUri': t_uri, "fileClass": t_class, 'sumImgNum': t_sum, "CanRead": True, "CurrentPos": 0})
-        except:
-            FAVORITE_LIST.append({'filename': t_filename, 'fileUri': t_uri, "fileClass": t_class, 'sumImgNum': t_sum, "CanRead": True, "CurrentPos": 0})
-            t_favorite_json = json.dumps(FAVORITE_LIST)
-            with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
-                f.write(t_favorite_json)
+        for i in FAVORITE_LIST:
+            if i['filename'] == t_filename and i['fileUri'] == t_uri:
+                return
+        FAVORITE_LIST.append({'filename': t_filename, 'fileUri': t_uri, "fileClass": t_class, 'sumImgNum': t_sum, "CanRead": True, "CurrentPos": 0})
+        t_favorite_json = json.dumps(FAVORITE_LIST)
+        with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
+            f.write(t_favorite_json)
+
+def deleteFavorite():
+    global FAVORITE_LIST
+    t_filename = mNowFileInfo['filename']
+    t_uri = mNowFileInfo['uri']
+    if t_filename:
+        for n, i in enumerate(FAVORITE_LIST):
+            if i['filename'] == t_filename and i['fileUri'] == t_uri:
+                FAVORITE_LIST.pop(n)
+                t_favorite_json = json.dumps(FAVORITE_LIST)
+                with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
+                    f.write(t_favorite_json)
+                if mFileListMode is USE_FAVORITE_LIST:
+                    root.mainFrame.manageFrame.manageList.delete(0, END)
+                    for info in FAVORITE_LIST:
+                        root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+                    OPEN_FILE_LIST = FAVORITE_LIST
+                    changeFile(CHANGE_FILE, 0)
+                    refreshManageBar = True
 
 def initMenu(master):
     global mTwoViewMode
@@ -1449,7 +1468,7 @@ def initMenu(master):
     master.menu.filemenu = Menu(master)
     master.menu.add_cascade(label='文件', menu=master.menu.filemenu)
     master.menu.filemenu.add_command(label="打开...", command=lambda: fileDialog(master, OPEN_FILE))
-    master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
+    # master.menu.filemenu.add_command(label="管理收藏库...", command=testMyAskString)
     master.menu.filemenu.add_separator()
     master.menu.filemenu.add_command(label="文件属性...", command=showInfoOfFile)
     master.menu.filemenu.add_command(label="密码管理...", command=passwordConfig)
@@ -1481,9 +1500,13 @@ def initMenu(master):
     master.menu.viewmenu.add_radiobutton(variable=mViewMode, value=1, label="适应宽度模式", command=lambda: scaleFitMode(1))
     master.menu.viewmenu.add_radiobutton(variable=mViewMode, value=2, label="适应高度模式", command=lambda: scaleFitMode(2))
     master.menu.viewmenu.add_separator()
-    master.menu.viewmenu.add_command(label="顺时针旋转 90度", command=lambda: rotateImg(1))
-    master.menu.viewmenu.add_command(label="逆时针旋转 90度", command=lambda: rotateImg(2))
-    master.menu.viewmenu.add_command(label="旋转 180度", command=lambda: rotateImg(3))
+    global rotateModeVar
+    rotateModeVar = IntVar()
+    rotateModeVar.set(0)
+    master.menu.viewmenu.add_radiobutton(variable=rotateModeVar, value=0, label="正常角度", command=lambda: rotateImg(0))
+    master.menu.viewmenu.add_radiobutton(variable=rotateModeVar, value=3, label="顺时针旋转 90度", command=lambda: rotateImg(3))
+    master.menu.viewmenu.add_radiobutton(variable=rotateModeVar, value=1, label="逆时针旋转 90度", command=lambda: rotateImg(1))
+    master.menu.viewmenu.add_radiobutton(variable=rotateModeVar, value=2, label="旋转 180度", command=lambda: rotateImg(2))
 
     master.menu.jumpmenu = Menu(master)
     master.menu.add_cascade(label='跳转', menu=master.menu.jumpmenu)
@@ -1638,6 +1661,7 @@ def ShowPic(value, jump_num=0):
     global RANDOM_LIST
     global RANDOM_LIST_INDEX
     global RANDOM_LIST_LENGTH
+    global rotateModeVar
 
     changeImgLock.acquire()
     if value is JUMP_IMG:
@@ -1660,10 +1684,12 @@ def ShowPic(value, jump_num=0):
     mNowImgInfo['direct'] = value
     mNowImgInfo['refresh'] = True
     changeImgLock.release()
+    rotateModeVar.set(0)
 
 def changePicSingle(value):
     global changeImgLock
     global mNowImgInfo
+    global rotateModeVar
     changeImgLock.acquire()
     mNowImgInfo['step'] = 1
     if value is BACK_IMG:
@@ -1673,6 +1699,7 @@ def changePicSingle(value):
     mNowImgInfo['direct'] = value
     mNowImgInfo['refresh'] = True
     changeImgLock.release()
+    rotateModeVar.set(0)
 
 def changeFile(direct, jump_file=0):
     global label
@@ -1718,15 +1745,15 @@ def manageButtonEvent(index):
             root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
         root.mainFrame.manageFrame.manageList.selection_clear(0, END)
         global refreshManageBar
-        refreshManageBar = True
     elif index == 1:
         # global refreshManageBar
-        refreshManageBar = True
+        pass
     elif index == 2:
         global FAVORITE_LIST
         root.mainFrame.manageFrame.manageList.delete(0, END)
         for info in FAVORITE_LIST:
             root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+    refreshManageBar = True
 
 def showManageList(show):
     global root
@@ -1757,6 +1784,12 @@ def mouseRightEvent(event):
     if checkPosInManage(event):
         return
     # global RIGHT_MENU_VISIBLE
+    if mFileListMode is USE_FILE_LIST:
+        rightMenu.delete(1)
+        rightMenu.insert_command(0, label="收藏", command=addFavorite)
+    elif mFileListMode is USE_FAVORITE_LIST:
+        rightMenu.delete(1)
+        rightMenu.insert_command(0, label="取消收藏", command=deleteFavorite)
     rightMenu.unpost()
     rightMenu.post(event.x_root, event.y_root)
     # RIGHT_MENU_VISIBLE = True
@@ -2081,6 +2114,7 @@ if __name__ == '__main__':
     mNowImgInfo = {'imgPos': 0,
                    'used': 1,
                    'direct': NEXT_IMG,
+                   'rotate': 0,
                    'step': 1,
                    'refresh': False,
                    'scrollX': 0,
