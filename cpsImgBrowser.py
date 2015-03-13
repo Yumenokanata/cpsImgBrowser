@@ -64,6 +64,9 @@ MESSAGE_BAR_IMG_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
 
+MANAGE_BAR_BUTTON_WIDTH = 20
+MANAGE_BAR_LIST_WIDTH = 200
+
 NONE = 0
 NEAREST = 0
 ANTIALIAS = 1
@@ -256,6 +259,7 @@ class guardTh(threading.Thread):
         global mNowImgInfo
         global InfoMessage
         global mConfigData
+        global manageChecked
 
         global nTime
         nTime = time.time()
@@ -347,6 +351,19 @@ class guardTh(threading.Thread):
                         }
                     self.addQueue(self.nowShowImgPos)
                     mImgLoadQueueLock.release()
+                if manageChecked == 1:
+                    root.mainFrame.manageFrame.manageList.delete(0, END)
+                    for info in self.imgList:
+                        fn = info.filename.replace('\\', '/')
+                        fn = fn.split('/')[-1]
+                        try:
+                            fn = fn.encode("cp437").decode("gbk")
+                        except:
+                            pass
+                        root.mainFrame.manageFrame.manageList.insert(END, fn)
+                elif manageChecked == 0:
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
             else:
                 ChangeFileLock.release()
                 if self.imgList:
@@ -367,6 +384,9 @@ class guardTh(threading.Thread):
                     if not self.imgCache[twoPageNum]:
                         continue
                 # print("Change Img Time: %f " % (time.time() - nTime))
+                if manageChecked == 1:
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowShowImgPos)
                 mImgLoadQueueLock.acquire()
                 st = time.time()
                 self.shouldRefreshImg = False
@@ -403,7 +423,11 @@ class guardTh(threading.Thread):
         global label
         imgName = self.imgList[imgPos].filename
         imgName = self.checkImgName(imgName)
-        win_w = root.winfo_width()
+        global isShowManageList
+        if isShowManageList:
+            win_w = root.winfo_width() - MANAGE_BAR_BUTTON_WIDTH - MANAGE_BAR_LIST_WIDTH
+        else:
+            win_w = root.winfo_width() - MANAGE_BAR_BUTTON_WIDTH
         win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
         if win_h == 1:
             win_w = 800
@@ -450,7 +474,11 @@ class guardTh(threading.Thread):
         imgName_a = self.checkImgName(imgName_a)
         imgName_b = self.imgList[imgPos_b].filename
         imgName_b = self.checkImgName(imgName_b)
-        win_w = root.winfo_width()
+        global isShowManageList
+        if isShowManageList:
+            win_w = root.winfo_width() - MANAGE_BAR_BUTTON_WIDTH - MANAGE_BAR_LIST_WIDTH
+        else:
+            win_w = root.winfo_width() - MANAGE_BAR_BUTTON_WIDTH
         win_h = root.winfo_height() - MESSAGE_BAR_HEIGHT
         if win_h == 1:
             win_w = 800
@@ -1165,6 +1193,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     global ChangeFileFlag
     global nowFilePath
     global mConfigData
+    global root
     label.configure(image="")
     label2.configure(image="")
     label['text'] = "Loading"
@@ -1180,6 +1209,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
     t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile, depth=mConfigData.scanSubFileDepth)
+    sorted(t_file_list, key=lambda x: x['filename'])
 
     t_nowFilePos = 0
     for i,l in enumerate(t_file_list):
@@ -1193,6 +1223,11 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
     ChangeFileFlag["willFilePos"] = t_nowFilePos
     ChangeFileFlag["imgPos"] = imgPos
     ChangeFileLock.release()
+
+    root.mainFrame.manageFrame.manageList.delete(0, END)
+    for info in FILE_LIST:
+        root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
 
     if not t_file_list:
         showwarning(title="对不起", message="该文件夹下没有可用文件")
@@ -1343,13 +1378,16 @@ def setPasswordConfig(defaultPassword, filePassword):
     if filePassword:
         global PWD_JSON
         PWD_JSON = filePassword
-        if mConfigData.saveFilePassword:
-            t_pwd_json = json.dumps(PWD_JSON)
-            with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
-                f.write(t_pwd_json)
+        # if mConfigData.saveFilePassword:
+        #     t_pwd_json = json.dumps(PWD_JSON)
+        #     with open('.' + FILE_SIGN + 'Pwd.json', 'w') as f:
+        #         f.write(t_pwd_json)
 
     if defaultPassword:
-        mConfigData.defaultPassword = defaultPassword
+        if defaultPassword == [0]:
+            mConfigData.defaultPassword = []
+        else:
+            mConfigData.defaultPassword = defaultPassword
     print('setPasswordConfig')
 
 def initMenu(master):
@@ -1601,14 +1639,86 @@ def changeFile(direct, jump_file=0):
         ChangeFileFlag["willFilePos"] = jump_file
     ChangeFileLock.release()
 
+def manageButtonEvent(index):
+    global manageButtonList
+    global manageChecked
+    global isShowManageList
+    global root
+    for i, b in enumerate(manageButtonList):
+        if i == index and manageChecked != index:
+            b['bg'] = '#F1F1F1'
+        else:
+            b['bg'] = '#D3D3D3'
+    if manageChecked == index:
+        isShowManageList = False
+        manageChecked = -1
+        showManageList(False)
+        mNowImgInfo['refresh'] = True
+        return
+    if not isShowManageList:
+        isShowManageList = True
+        showManageList(True)
+        mNowImgInfo['refresh'] = True
+    manageChecked = index
+    if index == 0:
+        global FILE_LIST
+        root.mainFrame.manageFrame.manageList.delete(0, END)
+        for info in FILE_LIST:
+            root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+        root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+        global guardTask
+        root.mainFrame.manageFrame.manageList.selection_set(guardTask.nowFileInfo.FilePos)
+    elif index == 1:
+        global guardTask
+        root.mainFrame.manageFrame.manageList.delete(0, END)
+        for info in guardTask.imgList:
+            fn = info.filename.replace('\\', '/')
+            fn = fn.split('/')[-1]
+            try:
+                fn = fn.encode("cp437").decode("gbk")
+            except:
+                pass
+            root.mainFrame.manageFrame.manageList.insert(END, fn)
+    elif index == 2:
+        global FAVORITE_JSON
+        root.mainFrame.manageFrame.manageList.delete(0, END)
+        for info in FAVORITE_JSON:
+            root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+
+def showManageList(show):
+    global root
+    if show:
+        # root.mainFrame.manageFrame.manageList.place(x=MANAGE_BAR_BUTTON_WIDTH, y=0, width=MANAGE_BAR_LIST_WIDTH - 10, relheight=1, anchor=NW)
+        # root.mainFrame.manageFrame.listScrollBar.place(x=MANAGE_BAR_BUTTON_WIDTH, y=0, width=10, relheight=1, anchor=NW)
+        root.mainFrame.manageFrame.place(width=MANAGE_BAR_BUTTON_WIDTH + MANAGE_BAR_LIST_WIDTH)
+    else:
+        root.mainFrame.manageFrame.place(width=MANAGE_BAR_BUTTON_WIDTH)
+        # root.mainFrame.manageFrame.manageList.pack_forget()
+        # root.mainFrame.manageFrame.listScrollBar.pack_forget()
+
+def checkPosInManage(event):
+    global isShowManageList
+    if isShowManageList:
+        managePos = MANAGE_BAR_BUTTON_WIDTH + MANAGE_BAR_LIST_WIDTH
+    else:
+        managePos = MANAGE_BAR_BUTTON_WIDTH
+    t = root.winfo_geometry()
+    win_w = int(t.split('+')[-2])
+    ev_x = event.x_root - win_w
+    if ev_x < managePos:
+        return True
+    return False
+
 def mouseRightEvent(event):
     global rightMenu
+    if checkPosInManage(event):
+        return
     # global RIGHT_MENU_VISIBLE
     rightMenu.unpost()
     rightMenu.post(event.x_root, event.y_root)
     # RIGHT_MENU_VISIBLE = True
 
-def mouseEvent(ev):
+def mouseEvent(event):
     global nTime
     nTime = time.time()
     global slideT
@@ -1616,6 +1726,9 @@ def mouseEvent(ev):
     global rightMenu
     # global RIGHT_MENU_VISIBLE
     rightMenu.unpost()
+
+    if checkPosInManage(event):
+        return
     # if RIGHT_MENU_VISIBLE:
     #     rightMenu.unpost()
     #     RIGHT_MENU_VISIBLE = False
@@ -1626,8 +1739,8 @@ def mouseEvent(ev):
     t=root.winfo_geometry()
     win_w = int(t.split('+')[-2])
     win_h = int(t.split('+')[-1])
-    ev_x = ev.x_root - win_w
-    ev_y = ev.y_root - win_h
+    ev_x = event.x_root - win_w
+    ev_y = event.y_root - win_h
 
     if ev_x > s_width / 3.0 * 2.0:
         ShowPic(NEXT_IMG)
@@ -1644,6 +1757,8 @@ def mouseWheelEvent(event):
     global mNowImgInfo
     global mConfigData
     global root
+    if checkPosInManage(event):
+        return
 
     if not (mConfigData.twoPageMode or mConfigData.scaleFitMode is SCALE_FIT_MODE_BOTH):
         img_w, img_h = mNowImgInfo['boxSize']
@@ -1673,7 +1788,11 @@ def mouseWheelEvent(event):
 
 def setImgPlace(mX, mY):
     global root
-    root.mainFrame.imgFrame.place(x=mX, y=mY - MESSAGE_BAR_HEIGHT / 2)
+    global isShowManageList
+    if isShowManageList:
+        root.mainFrame.imgFrame.place(x=mX + (MANAGE_BAR_BUTTON_WIDTH + MANAGE_BAR_LIST_WIDTH) / 2, y=mY - MESSAGE_BAR_HEIGHT / 2)
+    else:
+        root.mainFrame.imgFrame.place(x=mX + MANAGE_BAR_BUTTON_WIDTH / 2, y=mY - MESSAGE_BAR_HEIGHT / 2)
 
 def fileJump():
     jump_num = askstring(title='文件跳转', prompt="请输入跳转到的文件序号: ")
@@ -1807,6 +1926,12 @@ def screenSizeChange(event):
             SCREEN_SIZE_CHANGE = True
             SCREEN_HEIGHT = win_h
 
+def selectManageList(event):
+    if manageChecked == 0:
+        changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
+    elif manageChecked == 1:
+        ShowPic(JUMP_IMG, root.mainFrame.manageFrame.manageList.curselection()[0])
+
 '''入口'''
 if __name__ == '__main__':
     if PLATFORM == 'Linux':
@@ -1835,8 +1960,58 @@ if __name__ == '__main__':
     root.mainFrame = Frame(root, bg=mConfigData.background)
     root.mainFrame.pack(fill=BOTH, expand=1)
     # label = tk.Label(root, image=_NONE, width=600, height=550, font='Helvetica -18 bold', bg='red')
+    root.mainFrame.manageFrame = Frame(root)
+    root.mainFrame.manageFrame.fileButton = Button(root.mainFrame.manageFrame,
+                                                   text='文\n件\n夹',
+                                                   relief=FLAT,
+                                                   width=1,
+                                                   bg='#D3D3D3',
+                                                   command=lambda: manageButtonEvent(0))
+    root.mainFrame.manageFrame.fileButton.place(x=0, y=0, width=20, height=70)
+    root.mainFrame.manageFrame.picButton = Button(root.mainFrame.manageFrame,
+                                                  text='图\n片',
+                                                  relief=FLAT,
+                                                  width=1,
+                                                  bg='#D3D3D3',
+                                                  command=lambda: manageButtonEvent(1))
+    root.mainFrame.manageFrame.picButton.place(x=0, y=70, width=20, height=70)
+    root.mainFrame.manageFrame.favoriteButton = Button(root.mainFrame.manageFrame,
+                                                       text='收\n藏\n夹',
+                                                       relief=FLAT,
+                                                       width=1,
+                                                       bg='#D3D3D3',
+                                                       command=lambda: manageButtonEvent(2))
+    root.mainFrame.manageFrame.favoriteButton.place(x=0, y=140, width=20, height=70)
+    root.mainFrame.manageFrame.bookmarkButton = Button(root.mainFrame.manageFrame,
+                                                       text='书\n签',
+                                                       relief=FLAT,
+                                                       width=1,
+                                                       bg='#D3D3D3',
+                                                       command=lambda: manageButtonEvent(3))
+    root.mainFrame.manageFrame.bookmarkButton.place(x=0, y=210, width=20, height=70)
+    root.mainFrame.manageFrame.place(x=0, y=0, width=MANAGE_BAR_BUTTON_WIDTH + MANAGE_BAR_LIST_WIDTH, relheight=1, height=-MESSAGE_BAR_HEIGHT, anchor=NW)
+    manageChecked = -1
+    isShowManageList = False
+    manageButtonList = [root.mainFrame.manageFrame.fileButton,
+                        root.mainFrame.manageFrame.picButton,
+                        root.mainFrame.manageFrame.favoriteButton,
+                        root.mainFrame.manageFrame.bookmarkButton]
+    manageListVar = StringVar()
+    root.mainFrame.manageFrame.manageList = Listbox(root.mainFrame.manageFrame, selectmode=SINGLE, listvariable=manageListVar, selectbackground='#FF7F50')
+    root.mainFrame.manageFrame.listScrollBar = Scrollbar(root.mainFrame.manageFrame)
+    root.mainFrame.manageFrame.listScrollHorizontalBar = Scrollbar(root.mainFrame.manageFrame, orient=HORIZONTAL)
+    root.mainFrame.manageFrame.manageList.bind('<ButtonRelease-1>', selectManageList)
+    showManageList(False)
+    root.mainFrame.manageFrame.manageList.place(x=MANAGE_BAR_BUTTON_WIDTH, y=0, width=MANAGE_BAR_LIST_WIDTH - 10, relheight=1, height=-10, anchor=NW)
+    root.mainFrame.manageFrame.listScrollBar.place(x=MANAGE_BAR_BUTTON_WIDTH + MANAGE_BAR_LIST_WIDTH - 10, y=0, width=10, relheight=1, height=-10, anchor=NW)
+    root.mainFrame.manageFrame.listScrollHorizontalBar.place(x=MANAGE_BAR_BUTTON_WIDTH, rely=1, width=MANAGE_BAR_LIST_WIDTH, height=10, anchor=SW)
+    root.mainFrame.manageFrame.manageList['yscrollcommand'] = root.mainFrame.manageFrame.listScrollBar.set
+    root.mainFrame.manageFrame.listScrollBar['command'] = root.mainFrame.manageFrame.manageList.yview
+    root.mainFrame.manageFrame.manageList['xscrollcommand'] = root.mainFrame.manageFrame.listScrollHorizontalBar.set
+    root.mainFrame.manageFrame.listScrollHorizontalBar['command'] = root.mainFrame.manageFrame.manageList.xview
+
     root.mainFrame.imgFrame = Frame(root.mainFrame, bg=mConfigData.background)
-    root.mainFrame.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, anchor=CENTER)
+    root.mainFrame.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, x=MANAGE_BAR_BUTTON_WIDTH / 2, anchor=CENTER)
     label = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
     label.grid()
     label2 = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
@@ -1884,6 +2059,7 @@ if __name__ == '__main__':
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
         FILE_LIST = getFileList(nowFilePath, subfile=mConfigData.scanSubFile)
+        sorted(FILE_LIST, key=lambda x: x['filename'])
         ChangeFileFlag = {"nowFilePos": 0, "direct": CURRENT_FILE, 'imgPos': 0}
 
         try:
@@ -1906,6 +2082,18 @@ if __name__ == '__main__':
         PWD_JSON = json.JSONDecoder().decode(pwdJson)
     except:
         PWD_JSON = {}
+
+    try:
+        with open('.' + FILE_SIGN + 'favorite.json', 'r') as f:
+            pwdJson = f.read()
+    except:
+        with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
+            f.write('')
+        favoriteJson = ''
+    try:
+        FAVORITE_JSON = json.JSONDecoder().decode(favoriteJson)
+    except:
+        FAVORITE_JSON = {}
 
     # 对旧版本保存的密码文件兼容
     if PWD_JSON:
