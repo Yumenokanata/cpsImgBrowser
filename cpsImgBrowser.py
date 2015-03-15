@@ -69,6 +69,7 @@ MANAGE_BAR_LIST_WIDTH = 200
 
 USE_FAVORITE_LIST = 1
 USE_FILE_LIST = 2
+USE_BOOKMARK_LIST = 3
 
 NONE = 0
 NEAREST = 0
@@ -228,10 +229,11 @@ class guardTh(threading.Thread):
         self.twoPageMode = False
 
     class _now_file_info():
-        def __init__(self, pos=-1, filename=_NONE, file=_NONE, _class=CPS_CLASS):
+        def __init__(self, pos=-1, filename=_NONE, uri=None, file=_NONE, _class=CPS_CLASS):
             self.FilePos = pos
             self.Filename = filename
             self.File = file
+            self.uri = uri
             self.FileClass = _class
 
     def finish(self):
@@ -255,6 +257,7 @@ class guardTh(threading.Thread):
         global ChangeFileFlag
         global willLoadImgQueue
         global OPEN_FILE_LIST
+        global BOOKMARK_LIST
         global root
         global label
         global label2
@@ -264,6 +267,8 @@ class guardTh(threading.Thread):
         global mConfigData
         global manageChecked
         global refreshManageBar
+        global saveCurrentImg
+        global deleteCurrentMark
 
         while self.live:
             time.sleep(0.08)
@@ -286,6 +291,7 @@ class guardTh(threading.Thread):
                     self.imgList = []
                     self.nowShowImgPos = 0
                     self.nowFileInfo.Filename = None
+                    self.nowFileInfo.uri = None
                     changeImgLock.acquire()
                     mNowImgInfo['imgPos'] = 0
                     changeImgLock.release()
@@ -295,6 +301,7 @@ class guardTh(threading.Thread):
                     self.shouldLoadImg = False
                     self.shouldRefreshImg = False
                     willLoadImgQueue = {
+                        "refresh": False,
                         "CPS_FILE": None,
                         "fileClass": None,
                         "nowFilePos": 0,
@@ -303,7 +310,7 @@ class guardTh(threading.Thread):
                         }
                     mImgLoadQueueLock.release()
                 else:
-                    if not t_direct is CHANGE_FILE:
+                    if not (t_direct is CHANGE_FILE or mFileListMode is USE_BOOKMARK_LIST):
                         OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
                     self.nowShowImgPos = 0
                     if t_direct is JUMP_FILE:
@@ -348,6 +355,7 @@ class guardTh(threading.Thread):
                     self.shouldLoadImg = TRUE
                     self.shouldRefreshImg = TRUE
                     willLoadImgQueue = {
+                        "refresh": True,
                         "CPS_FILE": self.nowFileInfo.File,
                         "fileClass": t_file_class,
                         "nowFilePos": self.nowFileInfo.FilePos,
@@ -396,9 +404,73 @@ class guardTh(threading.Thread):
                         except:
                             pass
                         root.mainFrame.manageFrame.manageList.insert(END, fn)
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowShowImgPos)
                 elif manageChecked == 2 and mFileListMode is USE_FAVORITE_LIST:
                     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
                     root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+                elif manageChecked == 3 and mFileListMode is USE_BOOKMARK_LIST:
+                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+
+            if saveCurrentImg:
+                t_sum = mNowFileInfo['sumImgNum']
+                t_class = mNowFileInfo['fileClass']
+                t_filename = mNowFileInfo['filename']
+                t_uri = mNowFileInfo['uri']
+                t_info = self.imgList[self.nowShowImgPos]
+                t_imgName = t_info.filename
+                key = getFileKey(t_uri + t_filename + t_imgName)
+                for i in BOOKMARK_LIST:
+                    if i['key'] == key:
+                        saveCurrentImg = False
+                        continue
+                if t_class is FILE_CLASS:
+                    with open(t_info.uri, 'rb') as fimg:
+                        with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
+                            wfile.write(fimg.read())
+                elif t_class is CPS_CLASS:
+                    with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
+                        wfile.write(self.nowFileInfo.File.read(t_info))
+                BOOKMARK_LIST.append({'filename': t_filename,
+                                      'fileUri': t_uri,
+                                      "fileClass": t_class,
+                                      'sumImgNum': t_sum,
+                                      "CanRead": True,
+                                      "CurrentPos": self.nowShowImgPos,
+                                      'imgName': self.checkImgName(t_imgName),
+                                      'key': key})
+                t_bm_json = json.dumps(BOOKMARK_LIST)
+                with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
+                    f.write(t_bm_json)
+                saveCurrentImg = False
+
+            if deleteCurrentMark:
+                if mFileListMode is not USE_BOOKMARK_LIST:
+                    deleteCurrentMark = False
+                    continue
+                t_imgName = BOOKMARK_LIST[self.nowFileInfo.FilePos]["imgName"]
+                key = BOOKMARK_LIST[self.nowFileInfo.FilePos]["key"]
+                for n, b in enumerate(BOOKMARK_LIST):
+                    if b['key'] == key:
+                        BOOKMARK_LIST.pop(n)
+                        try:
+                            os.remove('./bookmark/' + key + '.' + t_imgName.split('.')[-1])
+                        except:
+                            pass
+                        t_bm_json = json.dumps(BOOKMARK_LIST)
+                        with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
+                            f.write(t_bm_json)
+                        if manageChecked == 3:
+                            root.mainFrame.manageFrame.manageList.delete(0, END)
+                            for info in BOOKMARK_LIST:
+                                root.mainFrame.manageFrame.manageList.insert(END, info['imgName'])
+                        if mFileListMode is USE_BOOKMARK_LIST:
+                            OPEN_FILE_LIST = BOOKMARK_LIST
+                            changeFile(CHANGE_FILE, 0)
+                            refreshManageBar = True
+                        break
+                deleteCurrentMark = False
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 if mConfigData.twoPageMode:
@@ -882,7 +954,7 @@ class guardTh(threading.Thread):
         file_pos = self.nextCanReadFile(direct, self.nowFileInfo.FilePos)
 
         if OPEN_FILE_LIST[file_pos]["fileClass"] is FILE_CLASS:
-            self.nowFileInfo.File = OPEN_FILE_LIST[file_pos]["fileUri"]
+            self.nowFileInfo.File = OPEN_FILE_LIST[file_pos]["fileUri"] + OPEN_FILE_LIST[file_pos]['filename']
             self.nowFileInfo.FilePos = file_pos
             self.nowFileInfo.FileClass = FILE_CLASS
             return FILE_CLASS
@@ -1166,13 +1238,14 @@ class loadImgTh(threading.Thread):
             mImgLoadQueueLock.acquire()
             # if willLoadImgQueue["willLoadImgQueue"]:
             #     print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
-            if self.mLoadingFilePos == willLoadImgQueue["nowFilePos"]:
+            if not willLoadImgQueue["refresh"]:
                 if self.nowLoadImgInfo and (not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]):
                     willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
             else:
                 self.cpsFile = willLoadImgQueue["CPS_FILE"]
                 self.mLoadingFilePos = willLoadImgQueue["nowFilePos"]
                 self.fileClass = willLoadImgQueue["fileClass"]
+                willLoadImgQueue["refresh"] = False
 
             self.nowLoadImgInfo = _NONE
             while TRUE:
@@ -1207,17 +1280,21 @@ def rotateImg(MODE):
     changeImgLock.release()
     rotateModeVar.set(MODE)
 
-def changeFileListFrom(index=0, useFileList=True):
+def changeFileListFrom(index=0, useListClass=USE_FILE_LIST):
     global FILE_LIST
     global OPEN_FILE_LIST
     global mFileListMode
-    if useFileList and mFileListMode is not USE_FILE_LIST:
+    if useListClass is USE_FILE_LIST and mFileListMode is not USE_FILE_LIST:
         mFileListMode = USE_FILE_LIST
         OPEN_FILE_LIST = FILE_LIST
         changeFile(CHANGE_FILE, index)
-    elif not useFileList and mFileListMode is not USE_FAVORITE_LIST:
+    elif useListClass is USE_FAVORITE_LIST and mFileListMode is not USE_FAVORITE_LIST:
         mFileListMode = USE_FAVORITE_LIST
         OPEN_FILE_LIST = FAVORITE_LIST
+        changeFile(CHANGE_FILE, index)
+    elif useListClass is USE_BOOKMARK_LIST and mFileListMode is not USE_BOOKMARK_LIST:
+        mFileListMode = USE_BOOKMARK_LIST
+        OPEN_FILE_LIST = BOOKMARK_LIST
         changeFile(CHANGE_FILE, index)
 
 def changeFileFromDialog(path, imgPos=0, filename=''):
@@ -1452,13 +1529,23 @@ def deleteFavorite():
                 t_favorite_json = json.dumps(FAVORITE_LIST)
                 with open('.' + FILE_SIGN + 'favorite.json', 'w') as f:
                     f.write(t_favorite_json)
-                if mFileListMode is USE_FAVORITE_LIST:
+                if manageChecked == 2:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
-                    for info in FAVORITE_LIST:
+                    for info in BOOKMARK_LIST:
                         root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+                if mFileListMode is USE_FAVORITE_LIST:
                     OPEN_FILE_LIST = FAVORITE_LIST
                     changeFile(CHANGE_FILE, 0)
                     refreshManageBar = True
+                return
+
+def addBookmark():
+    global saveCurrentImg
+    saveCurrentImg = True
+
+def deleteBookmark():
+    global deleteCurrentMark
+    deleteCurrentMark = True
 
 def initMenu(master):
     global mTwoViewMode
@@ -1530,12 +1617,6 @@ def initMenu(master):
     mRandomSlide.set(RANDOM_JUMP_IMG)
     master.menu.jumpmenu.add_checkbutton(variable=mRandomSlide, label="随机模式", command=enableRandomJumpImg)
 
-    master.menu.bookmarkmenu = Menu(master)
-    master.menu.add_cascade(label='书签',menu=master.menu.bookmarkmenu)
-    master.menu.bookmarkmenu.add_command(label="添加书签", command=fileDialog)
-    master.menu.bookmarkmenu.add_command(label="管理书签...", command=fileDialog)
-    master.menu.bookmarkmenu.add_separator()
-
     master['menu'] = master.menu
 
 def initMouseRightMenu(master):
@@ -1543,6 +1624,7 @@ def initMouseRightMenu(master):
     rightMenu = Menu(master)
 
     rightMenu.add_command(label="收藏", command=addFavorite)
+    rightMenu.add_command(label="加入书签", command=addBookmark)
     rightMenu.add_command(label="下一页", command=lambda: changePicSingle(NEXT_IMG))
     rightMenu.add_command(label="上一页", command=lambda: changePicSingle(BACK_IMG))
     rightMenu.add_separator()
@@ -1753,6 +1835,11 @@ def manageButtonEvent(index):
         root.mainFrame.manageFrame.manageList.delete(0, END)
         for info in FAVORITE_LIST:
             root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+    elif index == 3:
+        global BOOKMARK_LIST
+        root.mainFrame.manageFrame.manageList.delete(0, END)
+        for info in BOOKMARK_LIST:
+            root.mainFrame.manageFrame.manageList.insert(END, info['imgName'])
     refreshManageBar = True
 
 def showManageList(show):
@@ -1784,12 +1871,17 @@ def mouseRightEvent(event):
     if checkPosInManage(event):
         return
     # global RIGHT_MENU_VISIBLE
+    rightMenu.delete(2)
+    rightMenu.insert_command(2, label="加入书签", command=addBookmark)
     if mFileListMode is USE_FILE_LIST:
         rightMenu.delete(1)
         rightMenu.insert_command(0, label="收藏", command=addFavorite)
     elif mFileListMode is USE_FAVORITE_LIST:
         rightMenu.delete(1)
         rightMenu.insert_command(0, label="取消收藏", command=deleteFavorite)
+    elif mFileListMode is USE_BOOKMARK_LIST:
+        rightMenu.delete(2)
+        rightMenu.insert_command(2, label="删除书签", command=deleteBookmark)
     rightMenu.unpost()
     rightMenu.post(event.x_root, event.y_root)
     # RIGHT_MENU_VISIBLE = True
@@ -1957,7 +2049,7 @@ def getFileList(file_uri, subfile=False, depth=0):
         elif os.path.isdir(file_uri + sub_file_name):
             t_file_list += getFileList(file_uri + sub_file_name, subfile=subfile, depth=depth)
     if has_pic:
-        t_file_list.append({"filename": file_uri.split(FILE_SIGN)[-2], "fileUri": file_uri, "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
+        t_file_list.append({"filename": file_uri.split(FILE_SIGN)[-2], "fileUri": os.path.dirname(file_uri[:-1]) + '/', "fileClass": FILE_CLASS, "CanRead": TRUE, "CurrentPos": 0})
     return t_file_list
 
 def closeWin():
@@ -2008,14 +2100,19 @@ def selectManageList(event):
         if mFileListMode == USE_FILE_LIST:
             changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
         else:
-            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0])
+            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], USE_FILE_LIST)
     elif manageChecked == 1:
         ShowPic(JUMP_IMG, root.mainFrame.manageFrame.manageList.curselection()[0])
     elif manageChecked == 2:
         if mFileListMode == USE_FAVORITE_LIST:
             changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
         else:
-            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], False)
+            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], USE_FAVORITE_LIST)
+    elif manageChecked == 3:
+        if mFileListMode == USE_BOOKMARK_LIST:
+            changeFile(JUMP_FILE, root.mainFrame.manageFrame.manageList.curselection()[0])
+        else:
+            changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], USE_BOOKMARK_LIST)
 
 '''入口'''
 if __name__ == '__main__':
@@ -2028,6 +2125,8 @@ if __name__ == '__main__':
 
     mConfigData = getConfigFromFile()
     mFileListMode = USE_FILE_LIST
+    deleteCurrentMark = False
+    saveCurrentImg = False
 
     root = tk.Tk()
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2))
@@ -2185,6 +2284,20 @@ if __name__ == '__main__':
         FAVORITE_LIST = json.JSONDecoder().decode(favoriteJson)
     except:
         FAVORITE_LIST = []
+
+    try:
+        with open('.' + FILE_SIGN + 'bookmark.json', 'r') as f:
+            bookmarkJson = f.read()
+    except:
+        with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
+            f.write('')
+        bookmarkJson = ''
+    try:
+        BOOKMARK_LIST = json.JSONDecoder().decode(bookmarkJson)
+    except:
+        BOOKMARK_LIST = []
+    if not os.path.exists("./bookmark/"):
+        os.mkdir("./bookmark/")
 
     # 对旧版本保存的密码文件兼容
     if PWD_JSON:
