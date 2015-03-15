@@ -528,9 +528,8 @@ class openFileDialog():
         self.refreshFileListBox(self.nowFilePath)
 
     def changeMount(self, event):
-        t = self.openfileRoot.mountList.curselection()
-        now_mount = self.openfileRoot.mountList.get(t)
-        self.nowFilePath = '/media/' + USER_NAME + '/' + now_mount + '/'
+        t = self.openfileRoot.mountList.curselection()[0]
+        self.nowFilePath = self.mountList[t] + '/'
         self.uriV.set(self.nowFilePath)
         self.refreshFileListBox(self.nowFilePath)
 
@@ -654,9 +653,17 @@ class openFileDialog():
 
         mountV = StringVar()
         self.openfileRoot.mountList = Listbox(self.openfileRoot, listvariable=mountV, selectmode=SINGLE)
-        mList = os.listdir('/media/' + USER_NAME)
-        for m in mList:
+        mListMedia = os.listdir('/media/' + USER_NAME)
+        for m in mListMedia:
             self.openfileRoot.mountList.insert(END, m)
+        t_listHome = os.listdir('/home/' + USER_NAME)
+        mListHome = []
+        for m in t_listHome:
+            if not m.startswith('.'):
+                mListHome.append(m)
+                self.openfileRoot.mountList.insert(END, m)
+        self.mountList = ['/media/' + USER_NAME + '/' + info1 for info1 in mListMedia] +\
+                         ['/home/' + USER_NAME + '/' + info2 for info2 in mListHome]
         self.openfileRoot.mountList.bind('<Double-Button-1>', self.changeMount)
         self.openfileRoot.m_scrollbar = Scrollbar(self.openfileRoot, orient=VERTICAL)
         self.openfileRoot.mountList['yscrollcommand'] = self.openfileRoot.m_scrollbar.set
