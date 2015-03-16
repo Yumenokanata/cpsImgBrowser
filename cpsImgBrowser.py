@@ -1681,6 +1681,8 @@ def setConfig(data):
     if data:
         global mConfigData
         mConfigData.background = data.background
+        label['fg'] = getInverse(mConfigData.background)
+        label2['fg'] = getInverse(mConfigData.background)
         mConfigData.customBackground = data.customBackground
         mConfigData.restore = data.restore
         mConfigData.saveLatelyFileInfo = data.saveLatelyFileInfo
@@ -2108,6 +2110,18 @@ def selectManageList(event):
         else:
             changeFileListFrom(root.mainFrame.manageFrame.manageList.curselection()[0], USE_BOOKMARK_LIST)
 
+def getInverse(color):
+    R_color_str = color[1:3]
+    G_color_str = color[3:5]
+    B_color_str = color[5:7]
+    R_color_int = 255 - int(R_color_str, 16)
+    G_color_int = 255 - int(G_color_str, 16)
+    B_color_int = 255 - int(B_color_str, 16)
+    R_color_inverse_str = hex(R_color_int)[-2:]
+    G_color_inverse_str = hex(G_color_int)[-2:]
+    B_color_inverse_str = hex(B_color_int)[-2:]
+    return '#' + R_color_inverse_str + G_color_inverse_str + B_color_inverse_str
+
 '''入口'''
 if __name__ == '__main__':
     if PLATFORM == 'Linux':
@@ -2193,9 +2207,9 @@ if __name__ == '__main__':
 
     root.mainFrame.imgFrame = Frame(root.mainFrame, bg=mConfigData.background)
     root.mainFrame.imgFrame.place(relx=0.5, rely=0.5, y=-MESSAGE_BAR_HEIGHT / 2, x=MANAGE_BAR_BUTTON_WIDTH / 2, anchor=CENTER)
-    label = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
+    label = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', fg=getInverse(mConfigData.background), bg=mConfigData.background)
     label.grid()
-    label2 = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', bg=mConfigData.background)
+    label2 = tk.Label(root.mainFrame.imgFrame, image=_NONE, font='Helvetica -18 bold', fg=getInverse(mConfigData.background), bg=mConfigData.background)
     label2.grid(row=0, column=1)
     # label2.grid_forget()
     # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
