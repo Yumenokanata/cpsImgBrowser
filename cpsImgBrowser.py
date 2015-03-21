@@ -88,6 +88,8 @@ SCREEN_SIZE_CHANGE = False
 
 RIGHT_MENU_VISIBLE = False
 
+CPU_COUNT = multiprocessing.cpu_count()
+
 PLATFORM = platform.system()
 
 class _KeyCode():
@@ -229,11 +231,17 @@ class guardTh(threading.Thread):
         self.live = True
         self.twoPageMode = False
         # self.LoadImgPool = multiprocessing.Pool()
-        self.posQueue = multiprocessing.Queue()
+        self.filePipeList = []
+        self.posQueueList = []
         self.imgQueue = multiprocessing.Queue()
-        self.filePipe = multiprocessing.Queue()
-        self.loadImgProcess = loadImgTh(self.filePipe, self.posQueue, self.imgQueue)
-        self.loadImgProcess.start()
+        self.loadImgProcessList = []
+        for i in range(CPU_COUNT):
+            filePipe = multiprocessing.Queue()
+            self.filePipeList.append(filePipe)
+            posQueue = multiprocessing.Queue()
+            self.posQueueList.append(posQueue)
+            p = loadImgTh(filePipe, posQueue, self.imgQueue)
+            p.start()
 
     class _now_file_info():
         def __init__(self, pos=-1, filename=_NONE, uri=None, file=_NONE, _class=CPS_CLASS):
@@ -326,7 +334,6 @@ class guardTh(threading.Thread):
                     InfoMessage[FILE_NAME_MESSAGE].set('Loading')
                     if self.openFile(t_direct) is FILE_CLASS:
                         t_file_class = FILE_CLASS
-
                         self.imgList = self.getImageList(self.nowFileInfo.File[-1], isfile=True)
                     else:
                         t_file_class = CPS_CLASS
@@ -338,6 +345,8 @@ class guardTh(threading.Thread):
                     mNowFileInfo['uri'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["fileUri"]
                     mNowFileInfo['sumImgNum'] = self.imgNum
                     mNowFileInfo['fileClass'] = t_file_class
+                    self.nowFileInfo.uri = mNowFileInfo['uri'] + mNowFileInfo['filename']
+
 
                     # print("self.nowShowImgPos: %d" % (self.nowShowImgPos))
                     # print("Load File Time: " + str(time.time() - st1))
@@ -356,9 +365,16 @@ class guardTh(threading.Thread):
                     self.shouldLoadImg = TRUE
                     self.shouldRefreshImg = TRUE
                     self.clearImgQueue()
-                    while not self.filePipe.empty():
-                        self.filePipe.get()
-                    self.filePipe.put(self.nowFileInfo.File[:-1])
+                    # for i in range(len(self.posQueueList)):
+                    #     while not self.posQueueList[i].empty():
+                    #         self.posQueueList[i].get()
+                    for posQueue in self.posQueueList:
+                        while not posQueue.empty():
+                            posQueue.get()
+                    for filePipe in self.filePipeList:
+                        while not filePipe.empty():
+                            filePipe.get()
+                        filePipe.put(self.nowFileInfo.File[:-1])
                     self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
                     print('asdasda')
                 refreshManageBar = True
@@ -396,7 +412,9 @@ class guardTh(threading.Thread):
             st = time.time()
             if not self.imgQueue.empty():
                 t_info = self.imgQueue.get()
-                if t_info[2] == "bad_file":
+                if t_info[3] != self.nowFileInfo.uri:
+                    pass
+                elif t_info[2] == "bad_file":
                     self.imgCache[t_info[0]] = BAD_FILE
                 else:
                     try:
@@ -425,6 +443,7 @@ class guardTh(threading.Thread):
                 if mConfigData.twoPageMode:
                     isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
                     if isGoodImg == 'Not load':
+                        self.shouldRefreshImg = True
                         continue
                     changeImgLock.acquire()
                     if mNowImgInfo['direct'] is BACK_IMG:
@@ -451,9 +470,10 @@ class guardTh(threading.Thread):
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
 
-        if self.loadImgProcess and self.loadImgProcess.is_alive():
-            self.loadImgProcess.finish()
-            self.loadImgProcess.join()
+        for loadImgProcess in self.loadImgProcessList:
+            if loadImgProcess and loadImgProcess.is_alive():
+                loadImgProcess.finish()
+                loadImgProcess.join()
 
 
     def loadSinglePage(self, imgPos):
@@ -643,8 +663,9 @@ class guardTh(threading.Thread):
     def addQueue(self, start_pos, file, fileClass, changeFile=True):
         print('add queue start')
         global mConfigData
-        while not self.posQueue.empty():
-            self.posQueue.get()
+        for posQueue in self.posQueueList:
+            while not posQueue.empty():
+                posQueue.get()
         add_queue = []
         if not self.imgCache[start_pos]:
             add_queue.append(start_pos)
@@ -704,8 +725,11 @@ class guardTh(threading.Thread):
             #                 except Exception as ex:
             #                     print(ex)
             print('add queue add')
+            lenN = len(self.posQueueList)
+            n = 0
             for pos in add_queue:
-                self.posQueue.put([self.imgList[pos], pos])
+                self.posQueueList[n % lenN].put([self.imgList[pos], pos, self.nowFileInfo.uri])
+                n += 1
             print('add queue over')
 
     def getImageList(self, cps, isfile=False):
@@ -1280,7 +1304,6 @@ class guardTh(threading.Thread):
                 break
         deleteCurrentMark = False
 
-
 class loadImgTh(multiprocessing.Process):
     def __init__(self, filePipe, posQueue, imgQueue):
         multiprocessing.Process.__init__(self)
@@ -1301,6 +1324,8 @@ class loadImgTh(multiprocessing.Process):
             if not self.filePipe.empty():
                 print('change file')
                 fileInfo = self.filePipe.get()
+                if self.cpsFile:
+                    self.cpsFile.close()
                 if fileInfo[2] == FILE_CLASS:
                     t_cps_file = ''
                 elif fileInfo[2] == 'zip':
@@ -1311,21 +1336,22 @@ class loadImgTh(multiprocessing.Process):
                     t_cps_file = rarfile.RarFile(fileInfo[0])
                     if fileInfo[1]:
                         t_cps_file.setpassword(fileInfo[1])
+                self.fileUri = fileInfo[0]
                 self.fileClass = fileInfo[2]
                 self.cpsFile = t_cps_file
-            if self.cpsFile and not self.posQueue.empty():
-                print('loadImg')
+            elif self.cpsFile and not self.posQueue.empty():
+                # print('loadImg ', )
                 imgInfo = self.posQueue.get()
                 if self.fileClass != FILE_CLASS:
                     try:
                         pil_image = self.cpsFile.read(imgInfo[0])
                     except Exception as ex:
-                        print('loadImgTh', ex)
+                        print('loadImgTh ' + str(self.cpsFile) + '\n', ex)
                         pil_image = BAD_FILE
                 else:
                     pil_image = imgInfo[0].uri
-                self.imgQueue.put([imgInfo[1], self.fileClass, pil_image])
-                print('%d | Load img Over' % (imgInfo[1]))
+                self.imgQueue.put([imgInfo[1], self.fileClass, pil_image, imgInfo[2]])
+                print('%d | Load img Over' % (imgInfo[1]), multiprocessing.current_process().name)
             else:
                 time.sleep(0.05)
         print('loadImgTh is dead')
