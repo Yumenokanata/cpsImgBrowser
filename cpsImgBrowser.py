@@ -228,8 +228,12 @@ class guardTh(threading.Thread):
         self.shouldRefreshImg = False
         self.live = True
         self.twoPageMode = False
-        self.LoadImgPool = multiprocessing.Pool()
-        self.imgQueue = []
+        # self.LoadImgPool = multiprocessing.Pool()
+        self.posQueue = multiprocessing.Queue()
+        self.imgQueue = multiprocessing.Queue()
+        self.filePipe = multiprocessing.Queue()
+        self.loadImgProcess = loadImgTh(self.filePipe, self.posQueue, self.imgQueue)
+        self.loadImgProcess.start()
 
     class _now_file_info():
         def __init__(self, pos=-1, filename=_NONE, uri=None, file=_NONE, _class=CPS_CLASS):
@@ -302,7 +306,9 @@ class guardTh(threading.Thread):
                     self.nextLoadImgPos = 0
                     self.shouldLoadImg = False
                     self.shouldRefreshImg = False
-                    self.clearQueue()
+                    if self.loadImgProcess and self.loadImgProcess.is_alive():
+                        self.loadImgProcess.finish()
+                        self.loadImgProcess = None
                 else:
                     if not (t_direct is CHANGE_FILE or mFileListMode is USE_BOOKMARK_LIST):
                         OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
@@ -349,6 +355,10 @@ class guardTh(threading.Thread):
                     self.nextLoadImgPos = self.nowShowImgPos
                     self.shouldLoadImg = TRUE
                     self.shouldRefreshImg = TRUE
+                    self.clearImgQueue()
+                    while not self.filePipe.empty():
+                        self.filePipe.get()
+                    self.filePipe.put(self.nowFileInfo.File[:-1])
                     self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
                     print('asdasda')
                 refreshManageBar = True
@@ -384,23 +394,21 @@ class guardTh(threading.Thread):
                 self.deleteBmark()
 
             st = time.time()
-            for i in range(len(self.imgQueue)):
-                if self.imgQueue[i] and self.imgQueue[i].ready():
-                    t_info = self.imgQueue[i].get()
-                    self.imgQueue[i] = ''
-                    if t_info[2] == "bad_file":
-                        self.imgCache[t_info[0]] = BAD_FILE
-                    else:
-                        try:
-                            if t_info[1] == FILE_CLASS:
-                                try:
-                                    self.imgCache[t_info[0]] = PIL.Image.open(t_info[2])
-                                except:
-                                    self.imgCache[t_info[0]] = BAD_FILE
-                            else:
-                                self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
-                        except Exception as ex:
-                            print(ex)
+            if not self.imgQueue.empty():
+                t_info = self.imgQueue.get()
+                if t_info[2] == "bad_file":
+                    self.imgCache[t_info[0]] = BAD_FILE
+                else:
+                    try:
+                        if t_info[1] == FILE_CLASS:
+                            try:
+                                self.imgCache[t_info[0]] = PIL.Image.open(t_info[2])
+                            except:
+                                self.imgCache[t_info[0]] = BAD_FILE
+                        else:
+                            self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
+                    except Exception as ex:
+                        print(ex)
             # print('check imgQueue spend: %f.5' % (time.time() - st))
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
@@ -442,6 +450,10 @@ class guardTh(threading.Thread):
                 mNowImgInfo['step'] = 2
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
+
+        if self.loadImgProcess and self.loadImgProcess.is_alive():
+            self.loadImgProcess.finish()
+            self.loadImgProcess.join()
 
 
     def loadSinglePage(self, imgPos):
@@ -621,12 +633,9 @@ class guardTh(threading.Thread):
         except:
             return BAD_FILE
 
-    def clearQueue(self):
-        self.LoadImgPool.close()
-        self.LoadImgPool.terminate()
-        # self.LoadImgPool.join()
-        self.LoadImgPool = multiprocessing.Pool()
-        pass
+    def clearImgQueue(self):
+        while not self.imgQueue.empty():
+            self.imgQueue.get()
 
     def initPool(self):
         print('start')
@@ -634,8 +643,8 @@ class guardTh(threading.Thread):
     def addQueue(self, start_pos, file, fileClass, changeFile=True):
         print('add queue start')
         global mConfigData
-        # self.LoadImgPool.close()
-        self.LoadImgPool.terminate()
+        while not self.posQueue.empty():
+            self.posQueue.get()
         add_queue = []
         if not self.imgCache[start_pos]:
             add_queue.append(start_pos)
@@ -694,15 +703,9 @@ class guardTh(threading.Thread):
             #                         self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
             #                 except Exception as ex:
             #                     print(ex)
-            self.imgQueue = []
             print('add queue add')
-            self.LoadImgPool = multiprocessing.Pool(initializer=self.initPool)
             for pos in add_queue:
-                self.imgQueue.append(self.LoadImgPool.apply_async(loadImg, args=({"CPS_FILE": file[:-1],
-                                                                                  "fileClass": fileClass,
-                                                                                  "imgInfo": self.imgList[pos],
-                                                                                  "imgPos": pos
-                                                                                  }, )))
+                self.posQueue.put([self.imgList[pos], pos])
             print('add queue over')
 
     def getImageList(self, cps, isfile=False):
@@ -1279,65 +1282,53 @@ class guardTh(threading.Thread):
 
 
 class loadImgTh(multiprocessing.Process):
-    def __init__(self):
-        threading.Thread.__init__(self, queue, live)
+    def __init__(self, filePipe, posQueue, imgQueue):
+        multiprocessing.Process.__init__(self)
         self.mLoadingFilePos = -1
-        self.nowLoadImgInfo = {}
-        self.cpsFile = _NONE
-        self.fileClass = CPS_CLASS
-        self.live = live
-        self.willLoadImgQueue = queue
+        self.filePipe = filePipe
+        self.fileClass = None
+        self.cpsFile = None
+        m = multiprocessing.Manager()
+        self.live = m.Value('int', 1)
+        self.posQueue = posQueue
+        self.imgQueue = imgQueue
 
     def finish(self):
-        self.live.value = False
+        self.live.value = 0
 
     def run(self):
-        global willLoadImgQueue
-        global mImgLoadQueueLock
-
         while self.live.value:
-            time.sleep(0.05)
-            if not willLoadImgQueue:
-                continue
-            if self.nowLoadImgInfo:
-                # print("loadImgTh: start filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-                if self.fileClass is FILE_CLASS:
+            if not self.filePipe.empty():
+                print('change file')
+                fileInfo = self.filePipe.get()
+                if fileInfo[2] == FILE_CLASS:
+                    t_cps_file = ''
+                elif fileInfo[2] == 'zip':
+                    t_cps_file = zipfile.ZipFile(fileInfo[0])
+                    if fileInfo[1]:
+                        t_cps_file.setpassword(fileInfo[1])
+                elif fileInfo[2] == 'rar':
+                    t_cps_file = rarfile.RarFile(fileInfo[0])
+                    if fileInfo[1]:
+                        t_cps_file.setpassword(fileInfo[1])
+                self.fileClass = fileInfo[2]
+                self.cpsFile = t_cps_file
+            if self.cpsFile and not self.posQueue.empty():
+                print('loadImg')
+                imgInfo = self.posQueue.get()
+                if self.fileClass != FILE_CLASS:
                     try:
-                        pil_image = PIL.Image.open(self.nowLoadImgInfo["imgInfo"].uri)
+                        pil_image = self.cpsFile.read(imgInfo[0])
                     except Exception as ex:
-                        print(ex)
+                        print('loadImgTh', ex)
                         pil_image = BAD_FILE
                 else:
-                    try:
-                        data = self.cpsFile.read(self.nowLoadImgInfo["imgInfo"])
-                        pil_image = PIL.Image.open(io.BytesIO(data))
-                    except Exception as ex:
-                        print(ex)
-                        pil_image = BAD_FILE
-                # print("Load Img Num: %d" % (self.nowLoadImgInfo["imgPos"]))
-                # print("loadImgTh: over  filename: %s" % (self.nowLoadImgInfo["imgInfo"].filename))
-
-            mImgLoadQueueLock.acquire()
-            # if willLoadImgQueue["willLoadImgQueue"]:
-            #     print("length of willLoadImgQueue: %d" % (len(willLoadImgQueue["willLoadImgQueue"])))
-            if not willLoadImgQueue["refresh"]:
-                if self.nowLoadImgInfo and (not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]):
-                    willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]] = pil_image
+                    pil_image = imgInfo[0].uri
+                self.imgQueue.put([imgInfo[1], self.fileClass, pil_image])
+                print('%d | Load img Over' % (imgInfo[1]))
             else:
-                self.cpsFile = willLoadImgQueue["CPS_FILE"]
-                self.mLoadingFilePos = willLoadImgQueue["nowFilePos"]
-                self.fileClass = willLoadImgQueue["fileClass"]
-                willLoadImgQueue["refresh"] = False
-
-            self.nowLoadImgInfo = _NONE
-            while TRUE:
-                if not willLoadImgQueue["willLoadImgQueue"]:
-                    self.nowLoadImgInfo = _NONE
-                    break
-                self.nowLoadImgInfo = willLoadImgQueue["willLoadImgQueue"].pop(0)
-                if not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]:
-                    break
-            mImgLoadQueueLock.release()
+                time.sleep(0.05)
+        print('loadImgTh is dead')
 
 def loadImg(fileInfo):
     print('loadImg')
