@@ -17,6 +17,7 @@ import platform
 import PIL
 from PIL import Image
 from PIL import ImageTk
+import multiprocessing
 # import imageTk
 import tkinter as tk
 from tkinter.filedialog import *
@@ -227,6 +228,8 @@ class guardTh(threading.Thread):
         self.shouldRefreshImg = False
         self.live = True
         self.twoPageMode = False
+        self.LoadImgPool = multiprocessing.Pool()
+        self.imgQueue = []
 
     class _now_file_info():
         def __init__(self, pos=-1, filename=_NONE, uri=None, file=_NONE, _class=CPS_CLASS):
@@ -287,7 +290,6 @@ class guardTh(threading.Thread):
                     InfoMessage[IMG_NUM_MESSAGE].set('')
                     InfoMessage[FILE_NUM_MESSAGE].set('0/0')
                     InfoMessage[FILE_NAME_MESSAGE].set('No File')
-                    mImgLoadQueueLock.acquire()
                     self.imgList = []
                     self.nowShowImgPos = 0
                     self.nowFileInfo.Filename = None
@@ -300,15 +302,7 @@ class guardTh(threading.Thread):
                     self.nextLoadImgPos = 0
                     self.shouldLoadImg = False
                     self.shouldRefreshImg = False
-                    willLoadImgQueue = {
-                        "refresh": False,
-                        "CPS_FILE": None,
-                        "fileClass": None,
-                        "nowFilePos": 0,
-                        "imgCache": self.imgCache,
-                        "willLoadImgQueue": []
-                        }
-                    mImgLoadQueueLock.release()
+                    self.clearQueue()
                 else:
                     if not (t_direct is CHANGE_FILE or mFileListMode is USE_BOOKMARK_LIST):
                         OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"] = self.nowShowImgPos
@@ -324,13 +318,14 @@ class guardTh(threading.Thread):
                     InfoMessage[IMG_NUM_MESSAGE].set('')
                     InfoMessage[FILE_NUM_MESSAGE].set('Loading/%d' % (len(OPEN_FILE_LIST)))
                     InfoMessage[FILE_NAME_MESSAGE].set('Loading')
-                    mImgLoadQueueLock.acquire()
                     if self.openFile(t_direct) is FILE_CLASS:
                         t_file_class = FILE_CLASS
-                        self.imgList = self.getImageList(self.nowFileInfo.File, isfile=True)
+
+                        self.imgList = self.getImageList(self.nowFileInfo.File[-1], isfile=True)
                     else:
                         t_file_class = CPS_CLASS
-                        self.imgList = self.getImageList(self.nowFileInfo.File)
+                        self.imgList = self.getImageList(self.nowFileInfo.File[-1])
+                    self.nowFileInfo.FileClass = t_file_class
                     if not self.nowShowImgPos:
                         self.nowShowImgPos = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
                     mNowFileInfo['filename'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["filename"]
@@ -354,16 +349,8 @@ class guardTh(threading.Thread):
                     self.nextLoadImgPos = self.nowShowImgPos
                     self.shouldLoadImg = TRUE
                     self.shouldRefreshImg = TRUE
-                    willLoadImgQueue = {
-                        "refresh": True,
-                        "CPS_FILE": self.nowFileInfo.File,
-                        "fileClass": t_file_class,
-                        "nowFilePos": self.nowFileInfo.FilePos,
-                        "imgCache": self.imgCache,
-                        "willLoadImgQueue": []
-                        }
-                    self.addQueue(self.nowShowImgPos)
-                    mImgLoadQueueLock.release()
+                    self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
+                    print('asdasda')
                 refreshManageBar = True
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
@@ -385,108 +372,52 @@ class guardTh(threading.Thread):
                         self.nowShowImgPos = mNowImgInfo['imgPos']
                         self.shouldRefreshImg = TRUE
                         changeImgLock.release()
-                        mImgLoadQueueLock.acquire()
-                        self.addQueue(self.nowShowImgPos)
-                        mImgLoadQueueLock.release()
+                        self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, False)
 
             if refreshManageBar:
-                refreshManageBar = False
-                if manageChecked == 0 and mFileListMode is USE_FILE_LIST:
-                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
-                elif manageChecked == 1:
-                    root.mainFrame.manageFrame.manageList.delete(0, END)
-                    for info in self.imgList:
-                        fn = info.filename.replace('\\', '/')
-                        fn = fn.split('/')[-1]
-                        try:
-                            fn = fn.encode("cp437").decode("gbk")
-                        except:
-                            pass
-                        root.mainFrame.manageFrame.manageList.insert(END, fn)
-                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-                    root.mainFrame.manageFrame.manageList.selection_set(self.nowShowImgPos)
-                elif manageChecked == 2 and mFileListMode is USE_FAVORITE_LIST:
-                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
-                elif manageChecked == 3 and mFileListMode is USE_BOOKMARK_LIST:
-                    root.mainFrame.manageFrame.manageList.selection_clear(0, END)
-                    root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+                self.reloadManagebar()
 
             if saveCurrentImg:
-                t_sum = mNowFileInfo['sumImgNum']
-                t_class = mNowFileInfo['fileClass']
-                t_filename = mNowFileInfo['filename']
-                t_uri = mNowFileInfo['uri']
-                t_info = self.imgList[self.nowShowImgPos]
-                t_imgName = t_info.filename
-                key = getFileKey(t_uri + t_filename + t_imgName)
-                for i in BOOKMARK_LIST:
-                    if i['key'] == key:
-                        saveCurrentImg = False
-                        continue
-                if t_class is FILE_CLASS:
-                    with open(t_info.uri, 'rb') as fimg:
-                        with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
-                            wfile.write(fimg.read())
-                elif t_class is CPS_CLASS:
-                    with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
-                        wfile.write(self.nowFileInfo.File.read(t_info))
-                BOOKMARK_LIST.append({'filename': t_filename,
-                                      'fileUri': t_uri,
-                                      "fileClass": t_class,
-                                      'sumImgNum': t_sum,
-                                      "CanRead": True,
-                                      "CurrentPos": self.nowShowImgPos,
-                                      'imgName': self.checkImgName(t_imgName),
-                                      'key': key})
-                t_bm_json = json.dumps(BOOKMARK_LIST)
-                with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
-                    f.write(t_bm_json)
-                saveCurrentImg = False
+                self.saveImg()
 
             if deleteCurrentMark:
-                if mFileListMode is not USE_BOOKMARK_LIST:
-                    deleteCurrentMark = False
-                    continue
-                t_imgName = BOOKMARK_LIST[self.nowFileInfo.FilePos]["imgName"]
-                key = BOOKMARK_LIST[self.nowFileInfo.FilePos]["key"]
-                for n, b in enumerate(BOOKMARK_LIST):
-                    if b['key'] == key:
-                        BOOKMARK_LIST.pop(n)
+                self.deleteBmark()
+
+            st = time.time()
+            for i in range(len(self.imgQueue)):
+                if self.imgQueue[i] and self.imgQueue[i].ready():
+                    t_info = self.imgQueue[i].get()
+                    self.imgQueue[i] = ''
+                    if t_info[2] == "bad_file":
+                        self.imgCache[t_info[0]] = BAD_FILE
+                    else:
                         try:
-                            os.remove('./bookmark/' + key + '.' + t_imgName.split('.')[-1])
-                        except:
-                            pass
-                        t_bm_json = json.dumps(BOOKMARK_LIST)
-                        with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
-                            f.write(t_bm_json)
-                        if manageChecked == 3:
-                            root.mainFrame.manageFrame.manageList.delete(0, END)
-                            for info in BOOKMARK_LIST:
-                                root.mainFrame.manageFrame.manageList.insert(END, info['imgName'])
-                        if mFileListMode is USE_BOOKMARK_LIST:
-                            OPEN_FILE_LIST = BOOKMARK_LIST
-                            changeFile(CHANGE_FILE, 0)
-                            refreshManageBar = True
-                        break
-                deleteCurrentMark = False
+                            if t_info[1] == FILE_CLASS:
+                                try:
+                                    self.imgCache[t_info[0]] = PIL.Image.open(t_info[2])
+                                except:
+                                    self.imgCache[t_info[0]] = BAD_FILE
+                            else:
+                                self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
+                        except Exception as ex:
+                            print(ex)
+            # print('check imgQueue spend: %f.5' % (time.time() - st))
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 if mConfigData.twoPageMode:
                     twoPageNum = (self.nowShowImgPos + 1) % self.imgNum
-                    if not self.imgCache[twoPageNum]:
-                        continue
                 # print("Change Img Time: %f " % (time.time() - nTime))
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
                     root.mainFrame.manageFrame.manageList.selection_set(self.nowShowImgPos)
-                mImgLoadQueueLock.acquire()
+
                 st = time.time()
                 self.shouldRefreshImg = False
 
                 if mConfigData.twoPageMode:
                     isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
+                    if isGoodImg == 'Not load':
+                        continue
                     changeImgLock.acquire()
                     if mNowImgInfo['direct'] is BACK_IMG:
                         if isGoodImg:
@@ -511,7 +442,7 @@ class guardTh(threading.Thread):
                 mNowImgInfo['step'] = 2
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
-                mImgLoadQueueLock.release()
+
 
     def loadSinglePage(self, imgPos):
         global label
@@ -569,8 +500,6 @@ class guardTh(threading.Thread):
             return False
         imgName_a = self.imgList[imgPos_a].filename
         imgName_a = self.checkImgName(imgName_a)
-        imgName_b = self.imgList[imgPos_b].filename
-        imgName_b = self.checkImgName(imgName_b)
         global isShowManageList
         if isShowManageList:
             win_w = root.winfo_width() - MANAGE_BAR_BUTTON_WIDTH - MANAGE_BAR_LIST_WIDTH
@@ -587,6 +516,11 @@ class guardTh(threading.Thread):
             return False
         if reSize_a[0] > reSize_a[1]:
             return False
+
+        if not self.imgCache[imgPos_b]:
+            return 'Not load'
+        imgName_b = self.imgList[imgPos_b].filename
+        imgName_b = self.checkImgName(imgName_b)
         t_showImg_b = self.imgCache[imgPos_b]
         reSize_b = self.getFitBoxSize(t_showImg_b, win_w / 2, win_h, SCALE_FIT_MODE_BOTH)
         if not reSize_b:
@@ -650,7 +584,12 @@ class guardTh(threading.Thread):
     def getFitBoxSize(self, showImg, box_x, box_y, mode):
         if showImg is BAD_FILE:
             return False
-        img_w, img_h = showImg.size
+        try:
+            img_w, img_h = showImg.size
+        except Exception as ex:
+            print(showImg)
+            print(ex)
+            return
         if mode is SCALE_FIT_MODE_BOTH:
             scale = 1.0 * box_y / img_h
             if img_w * scale > box_x:
@@ -668,36 +607,6 @@ class guardTh(threading.Thread):
             box_height = img_h
         return [img_w, img_h, box_width, box_height]
 
-    def addQueue(self, start_pos):
-        global mConfigData
-        willLoadImgQueue["willLoadImgQueue"] = [{"imgInfo": self.imgList[start_pos],
-                                                 "imgPos": start_pos}]
-        if mConfigData.useCache:
-            if mConfigData.twoPageMode:
-                list_num = len(self.imgList)
-                for i in range(min([5, list_num])):
-                    t_nextLoadImgPos = (start_pos + i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                 "imgPos": t_nextLoadImgPos})
-                    t_nextLoadImgPos = (start_pos + i + 1) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                         "imgPos": t_nextLoadImgPos})
-                    t_nextLoadImgPos = (start_pos - i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                 "imgPos": t_nextLoadImgPos})
-                    t_nextLoadImgPos = (start_pos - i - 1) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                         "imgPos": t_nextLoadImgPos})
-            else:
-                list_num = len(self.imgList)
-                for i in range(min([10, list_num])):
-                    t_nextLoadImgPos = (start_pos + i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                                 "imgPos": t_nextLoadImgPos})
-                    t_nextLoadImgPos = (start_pos - i) % list_num
-                    willLoadImgQueue["willLoadImgQueue"].append({"imgInfo": self.imgList[t_nextLoadImgPos],
-                                                         "imgPos": t_nextLoadImgPos})
-
     def resizePic(self, w, h, rw, rh, pil_image):
         if w == rw and h == rh:
             return pil_image
@@ -711,6 +620,90 @@ class guardTh(threading.Thread):
             return pil_image.resize((width, height), mConfigData.scaleMode)
         except:
             return BAD_FILE
+
+    def clearQueue(self):
+        self.LoadImgPool.close()
+        self.LoadImgPool.terminate()
+        # self.LoadImgPool.join()
+        self.LoadImgPool = multiprocessing.Pool()
+        pass
+
+    def initPool(self):
+        print('start')
+
+    def addQueue(self, start_pos, file, fileClass, changeFile=True):
+        print('add queue start')
+        global mConfigData
+        # self.LoadImgPool.close()
+        self.LoadImgPool.terminate()
+        add_queue = []
+        if not self.imgCache[start_pos]:
+            add_queue.append(start_pos)
+
+        print('add queue')
+
+        if mConfigData.useCache:
+            if mConfigData.twoPageMode:
+                list_num = len(self.imgList)
+                t_nextLoadImgPos = (start_pos + 1) % list_num
+                if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                    add_queue.append(t_nextLoadImgPos)
+                for i in range(1, min([5, list_num])):
+                    t_nextLoadImgPos = (start_pos + i * 2) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+                    t_nextLoadImgPos = (start_pos + i * 2 +1) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+                    t_nextLoadImgPos = (start_pos - i * 2 + 1) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+                    t_nextLoadImgPos = (start_pos - i * 2) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+            else:
+                list_num = len(self.imgList)
+                for i in range(min([10, list_num])):
+                    t_nextLoadImgPos = (start_pos + i) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+                    t_nextLoadImgPos = (start_pos - i) % list_num
+                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+                        add_queue.append(t_nextLoadImgPos)
+        if add_queue:
+            # if not changeFile:
+            #     self.LoadImgPool.join()
+            #     for i in range(len(self.imgQueue)):
+            #         if self.imgQueue[i] and self.imgQueue[i].ready():
+            #             t_info = self.imgQueue[i].get()
+            #             self.imgQueue[i] = ''
+            #             for n, imgPos in enumerate(add_queue):
+            #                 if i == imgPos:
+            #                     add_queue.pop(n)
+            #                     break
+            #             if t_info[2] == "bad_file":
+            #                 self.imgCache[t_info[0]] = BAD_FILE
+            #             else:
+            #                 try:
+            #                     if t_info[1] == FILE_CLASS:
+            #                         try:
+            #                             self.imgCache[t_info[0]] = PIL.Image.open(t_info[2])
+            #                         except:
+            #                             self.imgCache[t_info[0]] = BAD_FILE
+            #                     else:
+            #                         self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
+            #                 except Exception as ex:
+            #                     print(ex)
+            self.imgQueue = []
+            print('add queue add')
+            self.LoadImgPool = multiprocessing.Pool(initializer=self.initPool)
+            for pos in add_queue:
+                self.imgQueue.append(self.LoadImgPool.apply_async(loadImg, args=({"CPS_FILE": file[:-1],
+                                                                                  "fileClass": fileClass,
+                                                                                  "imgInfo": self.imgList[pos],
+                                                                                  "imgPos": pos
+                                                                                  }, )))
+            print('add queue over')
 
     def getImageList(self, cps, isfile=False):
         if isfile:
@@ -954,7 +947,7 @@ class guardTh(threading.Thread):
         file_pos = self.nextCanReadFile(direct, self.nowFileInfo.FilePos)
 
         if OPEN_FILE_LIST[file_pos]["fileClass"] is FILE_CLASS:
-            self.nowFileInfo.File = OPEN_FILE_LIST[file_pos]["fileUri"] + OPEN_FILE_LIST[file_pos]['filename']
+            self.nowFileInfo.File = ['', OPEN_FILE_LIST[file_pos]["fileUri"] + OPEN_FILE_LIST[file_pos]['filename']]
             self.nowFileInfo.FilePos = file_pos
             self.nowFileInfo.FileClass = FILE_CLASS
             return FILE_CLASS
@@ -1050,7 +1043,7 @@ class guardTh(threading.Thread):
             needs_password = False
         except:
             needs_password = True
-
+        t_pwd = ''
         if needs_password:
             try:
                 pwd = PWD_JSON[file_md5]["password"]
@@ -1058,6 +1051,7 @@ class guardTh(threading.Thread):
                     raise Exception
                 t_cps_file.setpassword(pwd.encode("utf-8"))
                 t_cps_file.open(t_list[0])
+                t_pwd = pwd.encode("utf-8")
                 PWD_JSON[file_md5] = self.updateOldDataToNew(PWD_JSON[file_md5], _filename, _file_uri)
             except:
                 has_pwd = False
@@ -1071,6 +1065,7 @@ class guardTh(threading.Thread):
                             t_cps_file.setpassword(p.encode("utf-8"))
                             t_cps_file.open(t_list[0])
                             has_pwd = True
+                            t_pwd = p.encode("utf-8")
                             PWD_JSON.update({file_md5:{"password": p, "badfile": False, "filename": _filename, "uri": _file_uri}})
                             break
                         except:
@@ -1090,11 +1085,12 @@ class guardTh(threading.Thread):
                         t_cps_file.setpassword(pwd.encode("utf-8"))
                         t_cps_file.open(t_list[0])
                         has_pwd = True
+                        t_pwd = pwd.encode("utf-8")
                         PWD_JSON.update({file_md5:{"password": pwd, "badfile": False, "filename": _filename, "uri": _file_uri}})
                     except Exception as ex:
                         print(ex)
                         print("Password is WRONG !")
-        return t_cps_file
+        return [_file_uri + _filename, t_pwd, 'zip', t_cps_file]
 
     def openRarFile(self, _file_pos):
         global OPEN_FILE_LIST
@@ -1126,8 +1122,8 @@ class guardTh(threading.Thread):
             if not t_list:
                 return False
 
+        pwd = _NONE
         if t_cps_file.needs_password():
-            pwd = _NONE
             s_reload = True
             try:
                 pwd = PWD_JSON[file_md5]["password"]
@@ -1183,11 +1179,13 @@ class guardTh(threading.Thread):
             if s_reload:
                 t_cps_file.close()
                 t_cps_file = rarfile.RarFile(_file_uri + _filename)
-                t_cps_file.setpassword(pwd)
+                if pwd:
+                    t_cps_file.setpassword(pwd)
                 # CPS_FILE.testrar()
             if not self.getImageList(t_cps_file):
                 return False
-        return t_cps_file
+            t_cps_file.close()
+        return [_file_uri + _filename, pwd, 'rar', t_cps_file]
 
     def updateOldDataToNew(self, info, filename, uri):
         try:
@@ -1196,24 +1194,108 @@ class guardTh(threading.Thread):
         except:
             return {'password': info['password'], 'badfile': info['badfile'], 'filename': filename, 'uri': uri}
 
+    def reloadManagebar(self):
+        refreshManageBar = False
+        if manageChecked == 0 and mFileListMode is USE_FILE_LIST:
+            root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+            root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+        elif manageChecked == 1:
+            root.mainFrame.manageFrame.manageList.delete(0, END)
+            for info in self.imgList:
+                fn = info.filename.replace('\\', '/')
+                fn = fn.split('/')[-1]
+                try:
+                    fn = fn.encode("cp437").decode("gbk")
+                except:
+                    pass
+                root.mainFrame.manageFrame.manageList.insert(END, fn)
+            root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+            root.mainFrame.manageFrame.manageList.selection_set(self.nowShowImgPos)
+        elif manageChecked == 2 and mFileListMode is USE_FAVORITE_LIST:
+            root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+            root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
+        elif manageChecked == 3 and mFileListMode is USE_BOOKMARK_LIST:
+            root.mainFrame.manageFrame.manageList.selection_clear(0, END)
+            root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
 
-class loadImgTh(threading.Thread):
+    def saveImg(self):
+        t_sum = mNowFileInfo['sumImgNum']
+        t_class = mNowFileInfo['fileClass']
+        t_filename = mNowFileInfo['filename']
+        t_uri = mNowFileInfo['uri']
+        t_info = self.imgList[self.nowShowImgPos]
+        t_imgName = t_info.filename
+        key = getFileKey(t_uri + t_filename + t_imgName)
+        for i in BOOKMARK_LIST:
+            if i['key'] == key:
+                saveCurrentImg = False
+                continue
+        if t_class is FILE_CLASS:
+            with open(t_info.uri, 'rb') as fimg:
+                with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
+                    wfile.write(fimg.read())
+        elif t_class is CPS_CLASS:
+            with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
+                wfile.write(self.nowFileInfo.File.read(t_info))
+        BOOKMARK_LIST.append({'filename': t_filename,
+                              'fileUri': t_uri,
+                              "fileClass": t_class,
+                              'sumImgNum': t_sum,
+                              "CanRead": True,
+                              "CurrentPos": self.nowShowImgPos,
+                              'imgName': self.checkImgName(t_imgName),
+                              'key': key})
+        t_bm_json = json.dumps(BOOKMARK_LIST)
+        with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
+            f.write(t_bm_json)
+        saveCurrentImg = False
+
+    def deleteBmark(self):
+        if mFileListMode is not USE_BOOKMARK_LIST:
+            deleteCurrentMark = False
+            return
+        t_imgName = BOOKMARK_LIST[self.nowFileInfo.FilePos]["imgName"]
+        key = BOOKMARK_LIST[self.nowFileInfo.FilePos]["key"]
+        for n, b in enumerate(BOOKMARK_LIST):
+            if b['key'] == key:
+                BOOKMARK_LIST.pop(n)
+                try:
+                    os.remove('./bookmark/' + key + '.' + t_imgName.split('.')[-1])
+                except:
+                    pass
+                t_bm_json = json.dumps(BOOKMARK_LIST)
+                with open('.' + FILE_SIGN + 'bookmark.json', 'w') as f:
+                    f.write(t_bm_json)
+                if manageChecked == 3:
+                    root.mainFrame.manageFrame.manageList.delete(0, END)
+                    for info in BOOKMARK_LIST:
+                        root.mainFrame.manageFrame.manageList.insert(END, info['imgName'])
+                if mFileListMode is USE_BOOKMARK_LIST:
+                    OPEN_FILE_LIST = BOOKMARK_LIST
+                    changeFile(CHANGE_FILE, 0)
+                    refreshManageBar = True
+                break
+        deleteCurrentMark = False
+
+
+class loadImgTh(multiprocessing.Process):
     def __init__(self):
-        threading.Thread.__init__(self)
+        threading.Thread.__init__(self, queue, live)
         self.mLoadingFilePos = -1
         self.nowLoadImgInfo = {}
         self.cpsFile = _NONE
         self.fileClass = CPS_CLASS
-        self.live = True
+        self.live = live
+        self.willLoadImgQueue = queue
 
     def finish(self):
-        self.live = False
+        self.live.value = False
 
     def run(self):
         global willLoadImgQueue
         global mImgLoadQueueLock
 
-        while self.live:
+        while self.live.value:
             time.sleep(0.05)
             if not willLoadImgQueue:
                 continue
@@ -1256,6 +1338,36 @@ class loadImgTh(threading.Thread):
                 if not willLoadImgQueue["imgCache"][self.nowLoadImgInfo["imgPos"]]:
                     break
             mImgLoadQueueLock.release()
+
+def loadImg(fileInfo):
+    print('loadImg')
+    print('%d | Load img Over' % (fileInfo['imgPos']))
+    if fileInfo['fileClass'] == FILE_CLASS:
+        t_class = FILE_CLASS
+        try:
+            pil_image = fileInfo["imgInfo"].uri
+        except Exception as ex:
+            print(ex)
+            pil_image = BAD_FILE
+    else:
+        try:
+            if fileInfo['CPS_FILE'][2] == 'zip':
+                t_class = 'zip'
+                t_cps_file = zipfile.ZipFile(fileInfo['CPS_FILE'][0])
+                if fileInfo['CPS_FILE'][1]:
+                    t_cps_file.setpassword(fileInfo['CPS_FILE'][1])
+            else:
+                t_class = 'rar'
+                t_cps_file = rarfile.RarFile(fileInfo['CPS_FILE'][0])
+                if fileInfo['CPS_FILE'][1]:
+                    t_cps_file.setpassword(fileInfo['CPS_FILE'][1])
+            pil_image = t_cps_file.read(fileInfo["imgInfo"])
+            t_cps_file.close()
+            # pil_image = PIL.Image.open(io.BytesIO(data))
+        except Exception as ex:
+            print(ex)
+            pil_image = BAD_FILE
+    return [fileInfo['imgPos'], t_class, pil_image]
 
 def setMessage(imgName, imgNum, fileNum, fileName):
     # s_width = root.winfo_width()
@@ -2068,10 +2180,8 @@ def closeWin():
     saveConfigToFile(mConfigData)
 
     guardTask.finish()
-    loadTask.finish()
-    while guardTask.isAlive() or loadTask.isAlive():
+    while guardTask.isAlive():
         guardTask.finish()
-        loadTask.finish()
         time.sleep(0.1)
     root.destroy()
 
@@ -2137,6 +2247,7 @@ if __name__ == '__main__':
     saveCurrentImg = False
 
     root = tk.Tk()
+    # root.iconbitmap('./tk.ico')
     root.geometry("800x600+%d+%d" % ((800 - root.winfo_width()) / 2, (600 - root.winfo_height()) / 2))
     root.protocol('WM_DELETE_WINDOW', closeWin)
     # TODO
@@ -2328,10 +2439,7 @@ if __name__ == '__main__':
         except:
             PWD_JSON.update({k: {'password': info['password'], 'badfile': info['badfile'], 'filename': '', 'uri': ''}})
 
-    guardTask.setDaemon(TRUE)
-    loadTask = loadImgTh()
-    loadTask.setDaemon(TRUE)
+    guardTask.setDaemon(True)
     guardTask.start()
-    loadTask.start()
 
     root.mainloop()
