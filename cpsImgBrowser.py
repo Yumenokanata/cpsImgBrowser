@@ -60,10 +60,11 @@ FILE_NUM_MESSAGE = 2
 FILE_NAME_MESSAGE = 3
 
 MESSAGE_BAR_HEIGHT = 20
-MESSAGE_BAR_IMG_NAME_WIDTH = 0.4
+MESSAGE_BAR_INFO_WIDTH = 0.15
+MESSAGE_BAR_IMG_NAME_WIDTH = 0.35
 MESSAGE_BAR_IMG_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NUM_WIDTH = 0.1
-MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
+MESSAGE_BAR_FILE_NAME_WIDTH = 0.3
 
 MANAGE_BAR_BUTTON_WIDTH = 20
 MANAGE_BAR_LIST_WIDTH = 200
@@ -291,6 +292,7 @@ class guardTh(threading.Thread):
         global saveCurrentImg
         global deleteCurrentMark
         global deleteCurrentPack
+        global infoVar
 
         while self.live:
             time.sleep(0.08)
@@ -381,6 +383,8 @@ class guardTh(threading.Thread):
                             filePipe.get()
                         filePipe.put(self.nowFileInfo.File[:-1])
                     self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
+                    self.loadedImgNum = 0
+                    infoVar.set('加载中: %d / %d' % (self.loadedImgNum, self.imgNum))
                 refreshManageBar = True
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
@@ -472,6 +476,11 @@ class guardTh(threading.Thread):
                             self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
                     except Exception as ex:
                         print(ex)
+                self.loadedImgNum += 1
+                if self.loadedImgNum >= self.imgNum:
+                    infoVar.set('加载完成')
+                else:
+                    infoVar.set('加载中: %d / %d' % (self.loadedImgNum, self.imgNum))
             # print('check imgQueue spend: %f.5' % (time.time() - st))
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
@@ -695,10 +704,10 @@ class guardTh(threading.Thread):
                     return pil_image.resize((width, height), mConfigData.scaleMode)
             else:
                 print(pil_image.mode)
-                if pil_image.mode == 'RGB':
-                    return pil_image.resize((width, height))
-                else:
+                if pil_image.mode == 'L':
                     return pil_image.resize((width, height), ANTIALIAS)
+                else:
+                    return pil_image.resize((width, height))
         except:
             return BAD_FILE
 
@@ -1320,7 +1329,7 @@ class guardTh(threading.Thread):
                     wfile.write(fimg.read())
         elif t_class is CPS_CLASS:
             with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
-                wfile.write(self.nowFileInfo.File.read(t_info))
+                wfile.write(self.nowFileInfo.File[-1].read(t_info))
         BOOKMARK_LIST.append({'filename': t_filename,
                               'fileUri': t_uri,
                               "fileClass": t_class,
@@ -1618,6 +1627,12 @@ def setMangaMode():
     mConfigData.mangaMode = not mConfigData.mangaMode
     mNowImgInfo['refresh'] = True
 
+def showMessage(string):
+    root.messageLabel['text'] = string
+    root.messageLabel.place(in_=root.mainFrame.imgFrame, relx=0.5, rely=0.5, anchor=CENTER)
+    time.sleep(1.5)
+    root.messageLabel.place_forget()
+
 def startSlide():
     global slideT
     global SLIDE_START
@@ -1801,10 +1816,18 @@ def initMessage(master):
 
     master.messageLabel = Label(master, bg='white')
     master.messageLabel.place(relx=0, rely=1, height=MESSAGE_BAR_HEIGHT, relwidth=1, anchor=SW)
+    global infoVar
+    infoVar = StringVar()
+    master.messageLabel.infoImgNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=infoVar, justify=LEFT)
+    master.messageLabel.infoImgNameMessage.place(in_=master.messageLabel,
+                                                 relx=0, rely=0,
+                                                 relheight=1,
+                                                 relwidth=MESSAGE_BAR_INFO_WIDTH - 0.001,
+                                                 anchor=NW)
     ImgNameVar = StringVar()
     master.messageLabel.infoImgNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=ImgNameVar, justify=LEFT)
     master.messageLabel.infoImgNameMessage.place(in_=master.messageLabel,
-                                                 relx=0, rely=0,
+                                                 relx=MESSAGE_BAR_INFO_WIDTH, rely=0,
                                                  relheight=1,
                                                  relwidth=MESSAGE_BAR_IMG_NAME_WIDTH - 0.001,
                                                  anchor=NW)
@@ -1812,24 +1835,25 @@ def initMessage(master):
     ImgNumVar = StringVar()
     master.messageLabel.infoImgNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=ImgNumVar, justify=RIGHT)
     master.messageLabel.infoImgNumMessage.place(in_=master.messageLabel,
-                                                relx=0.4, rely=0,
+                                                relx=0.5, rely=0,
                                                 relheight=1,
                                                 relwidth=MESSAGE_BAR_IMG_NUM_WIDTH - 0.001,
                                                 anchor=NW)
     FileNumVar = StringVar()
     master.messageLabel.infoFileNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=FileNumVar, justify=RIGHT)
     master.messageLabel.infoFileNumMessage.place(in_=master.messageLabel,
-                                                 relx=0.5, rely=0,
+                                                 relx=0.6, rely=0,
                                                  relheight=1,
                                                  relwidth=MESSAGE_BAR_FILE_NUM_WIDTH - 0.001,
                                                  anchor=NW)
     FileNameVar = StringVar()
     master.messageLabel.infoFileNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=FileNameVar, justify=RIGHT)
     master.messageLabel.infoFileNameMessage.place(in_=master.messageLabel,
-                                                  relx=0.6, rely=0,
+                                                  relx=0.7, rely=0,
                                                   relheight=1,
                                                   relwidth=MESSAGE_BAR_FILE_NAME_WIDTH - 0.001,
                                                   anchor=NW)
+    infoVar.set('载入完成')
     ImgNameVar.set('OK')
     ImgNumVar.set('OK')
     FileNumVar.set('OK')
@@ -1905,6 +1929,7 @@ def ShowPic(value, jump_num=0):
     global RANDOM_LIST_LENGTH
     global rotateModeVar
     global endOfListTime
+    global sowMeaageTask
 
     changeImgLock.acquire()
     if value is JUMP_IMG:
@@ -1926,11 +1951,20 @@ def ShowPic(value, jump_num=0):
             t_pos = mNowImgInfo['imgPos'] + step
             t_max = mNowFileInfo['sumImgNum'] - 1
             if mNowImgInfo['imgPos'] != 0 and t_pos <= 0:
+                mNowImgInfo['step'] = 1
                 mNowImgInfo['imgPos'] = 0
             elif mNowImgInfo['imgPos'] + mNowImgInfo['used'] - 1 != t_max and t_pos >= t_max:
+                mNowImgInfo['step'] = 1
                 mNowImgInfo['imgPos'] = t_max
             elif (mNowImgInfo['imgPos'] == 0 and value is BACK_IMG) or (mNowImgInfo['imgPos'] + mNowImgInfo['used'] - 1 == t_max and value is NEXT_IMG):
-                if (time.time() - endOfListTime) > 1:
+                if not (sowMeaageTask and sowMeaageTask.isAlive()):
+                    if value is BACK_IMG:
+                        msg = '已到第一张'
+                    elif value is NEXT_IMG:
+                        msg = '已到最后一张'
+                    sowMeaageTask = threading.Thread(target=showMessage, args=(msg, ))
+                    sowMeaageTask.start()
+                if (time.time() - endOfListTime) > 0.3:
                     endOfListTime = time.time()
                     changeImgLock.release()
                     return
@@ -2405,6 +2439,8 @@ if __name__ == '__main__':
     # label.pack(padx=15, pady=15, expand=1, fill=BOTH)
     initMessage(root.mainFrame)
     initMouseRightMenu(root)
+    root.messageLabel = Label(root, font='Helvetica -17 bold',bg='#ffffff', fg='#000000', height=2, width=16)
+    sowMeaageTask = None
 
     SUB_FILE_DEPTH = mConfigData.scanSubFileDepth
     nowFilePath = os.getcwd() + '/'
