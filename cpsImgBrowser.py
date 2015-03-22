@@ -536,7 +536,7 @@ class guardTh(threading.Thread):
             t_showImg = t_showImg.rotate(mNowImgInfo['rotate'])
         reSize = self.getFitBoxSize(t_showImg, win_w, win_h, mConfigData.scaleFitMode)
         if not reSize:
-            self.setImgMessage(False, imgName, imgPos)
+            self.setImgMessage(False, imgName, str(imgPos + 1))
             return False
         show_img_resize = self.resizePic(reSize[0], reSize[1], reSize[2], reSize[3], t_showImg)
 
@@ -544,7 +544,7 @@ class guardTh(threading.Thread):
             tk_img = PIL.ImageTk.PhotoImage(show_img_resize)
         except Exception as ex:
             print(ex)
-            self.setImgMessage(False, imgName, imgPos)
+            self.setImgMessage(False, imgName, str(imgPos + 1))
             return False
 
         label['text']=""
@@ -552,7 +552,7 @@ class guardTh(threading.Thread):
         label.image = tk_img
         label2.configure(image="")
         setImgPlace(0, 0)
-        self.setImgMessage(True, imgName, imgPos)
+        self.setImgMessage(True, imgName, str(imgPos + 1))
         changeImgLock.acquire()
         if mConfigData.scaleFitMode == SCALE_FIT_MODE_WIDTH and win_h < reSize[3]:
             scroll = (reSize[3] - win_h) / 2
@@ -620,13 +620,13 @@ class guardTh(threading.Thread):
             label.image = tk_img_b
             label2.configure(image=tk_img_a)
             label2.image = tk_img_a
-            self.setImgMessage(True, imgName_b + ' | ' + imgName_a, self.nowShowImgPos)
+            self.setImgMessage(True, imgName_b + ' | ' + imgName_a, '%d | %d' % (imgPos_b + 1, imgPos_a + 1))
         else:
             label.configure(image=tk_img_a)
             label.image = tk_img_a
             label2.configure(image=tk_img_b)
             label2.image = tk_img_b
-            self.setImgMessage(True, imgName_a + ' | ' + imgName_b, self.nowShowImgPos)
+            self.setImgMessage(True, imgName_a + ' | ' + imgName_b, '%d | %d' % (imgPos_a + 1, imgPos_b + 1))
         setImgPlace(0, 0)
         return True
 
@@ -646,13 +646,13 @@ class guardTh(threading.Thread):
             label2.configure(image="")
             label['text'] = "Bad Image"
             InfoMessage[IMG_NAME_MESSAGE].set(imgName)
-            InfoMessage[IMG_NUM_MESSAGE].set('%d/%d' % (imgPos + 1, self.imgNum))
-            InfoMessage[FILE_NUM_MESSAGE].set('%d/%d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)))
+            InfoMessage[IMG_NUM_MESSAGE].set('(%s) / %d' % (imgPos, self.imgNum))
+            InfoMessage[FILE_NUM_MESSAGE].set('%d / %d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)))
             InfoMessage[FILE_NAME_MESSAGE].set(self.nowFileInfo.Filename)
         else:
             setMessage(imgName,
-                       '%d/%d' % (imgPos + 1, self.imgNum),
-                       '%d/%d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)),
+                       '(%s) / %d' % (imgPos, self.imgNum),
+                       '%d / %d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)),
                        self.nowFileInfo.Filename)
 
     def getFitBoxSize(self, showImg, box_x, box_y, mode):
@@ -1924,14 +1924,20 @@ def ShowPic(value, jump_num=0):
             mNowImgInfo['imgPos'] = RANDOM_LIST[RANDOM_LIST_INDEX]
         else:
             t_pos = mNowImgInfo['imgPos'] + step
-            t_len = mNowFileInfo['sumImgNum']
-            if (t_pos >= t_len or t_pos < 0):
+            t_max = mNowFileInfo['sumImgNum'] - 1
+            if mNowImgInfo['imgPos'] != 0 and t_pos <= 0:
+                mNowImgInfo['imgPos'] = 0
+            elif mNowImgInfo['imgPos'] + mNowImgInfo['used'] - 1 != t_max and t_pos >= t_max:
+                mNowImgInfo['imgPos'] = t_max
+            elif (mNowImgInfo['imgPos'] == 0 and value is BACK_IMG) or (mNowImgInfo['imgPos'] + mNowImgInfo['used'] - 1 == t_max and value is NEXT_IMG):
                 if (time.time() - endOfListTime) > 1:
                     endOfListTime = time.time()
                     changeImgLock.release()
                     return
                 endOfListTime = time.time() - 2
-            mNowImgInfo['imgPos'] = t_pos
+                mNowImgInfo['imgPos'] = t_pos
+            else:
+                mNowImgInfo['imgPos'] = t_pos
     mNowImgInfo['direct'] = value
     mNowImgInfo['refresh'] = True
     changeImgLock.release()
