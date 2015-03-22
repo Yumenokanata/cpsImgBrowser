@@ -77,6 +77,7 @@ NEAREST = 0
 ANTIALIAS = 1
 LINEAR = 2
 CUBIC = 3
+AUTO = 4
 
 SCALE_FIT_MODE_BOTH = 0
 SCALE_FIT_MODE_WIDTH = 1
@@ -220,6 +221,8 @@ def getFileKey(uri):
 class guardTh(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
+        self.endOfList = False
+        self.endOfListTime = 0
         self.nextLoadImgPos = 0
         self.nowFileInfo = self._now_file_info()
         self.nowShowImgPos = 0
@@ -348,7 +351,6 @@ class guardTh(threading.Thread):
                         self.nowShowImgPos = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["CurrentPos"]
                     mNowFileInfo['filename'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["filename"]
                     mNowFileInfo['uri'] = OPEN_FILE_LIST[self.nowFileInfo.FilePos]["fileUri"]
-                    mNowFileInfo['sumImgNum'] = self.imgNum
                     mNowFileInfo['fileClass'] = t_file_class
                     self.nowFileInfo.uri = mNowFileInfo['uri'] + mNowFileInfo['filename']
 
@@ -366,6 +368,7 @@ class guardTh(threading.Thread):
                     changeImgLock.release()
                     self.imgCache = [_NONE for i in range(len(self.imgList))]
                     self.imgNum = len(self.imgList)
+                    mNowFileInfo['sumImgNum'] = self.imgNum
                     self.nextLoadImgPos = self.nowShowImgPos
                     self.shouldLoadImg = TRUE
                     self.shouldRefreshImg = TRUE
@@ -431,7 +434,7 @@ class guardTh(threading.Thread):
                         root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
                     refreshManageBar = True
                 if OPEN_FILE_LIST:
-                    ChangeFileFlag["direct"] = CURRENT_FILE
+                    ChangeFileFlag["direct"] = CHANGE_FILE
                     ChangeFileFlag['imgPos'] = 0
                     ChangeFileFlag["willFilePos"] = self.nowFileInfo.FilePos % len(OPEN_FILE_LIST)
                 else:
@@ -440,6 +443,7 @@ class guardTh(threading.Thread):
                     label['text'] = "No File"
                 ChangeFileLock.release()
                 deleteCurrentPack = False
+                continue
 
             if refreshManageBar:
                 self.reloadManagebar()
@@ -472,7 +476,7 @@ class guardTh(threading.Thread):
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
                 if mConfigData.twoPageMode:
-                    twoPageNum = (self.nowShowImgPos + 1) % self.imgNum
+                    twoPageNum = self.nowShowImgPos + 1
                 # print("Change Img Time: %f " % (time.time() - nTime))
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.selection_clear(0, END)
@@ -482,7 +486,10 @@ class guardTh(threading.Thread):
                 self.shouldRefreshImg = False
 
                 if mConfigData.twoPageMode:
-                    isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
+                    if twoPageNum < self.imgNum:
+                        isGoodImg = self.loadTwoPage(self.nowShowImgPos, twoPageNum)
+                    else:
+                        isGoodImg = False
                     if isGoodImg == 'Not load':
                         self.shouldRefreshImg = True
                         continue
@@ -684,7 +691,14 @@ class guardTh(threading.Thread):
         width = int(w * factor)
         height = int(h * factor)
         try:
-            return pil_image.resize((width, height), mConfigData.scaleMode)
+            if mConfigData.scaleMode != AUTO:
+                    return pil_image.resize((width, height), mConfigData.scaleMode)
+            else:
+                print(pil_image.mode)
+                if pil_image.mode == 'RGB':
+                    return pil_image.resize((width, height))
+                else:
+                    return pil_image.resize((width, height), ANTIALIAS)
         except:
             return BAD_FILE
 
@@ -1471,7 +1485,7 @@ def changeFileFromDialog(path, imgPos=0, filename=''):
             nowFilePath = nowFilePath.replace(t_file_name, "")
 
     t_file_list = getFileList(nowFilePath, subfile=mConfigData.scanSubFile, depth=mConfigData.scanSubFileDepth)
-    sorted(t_file_list, key=lambda x: x['filename'])
+    t_file_list = sorted(t_file_list, key=lambda x: x['filename'])
 
     t_nowFilePos = 0
     for i,l in enumerate(t_file_list):
@@ -1884,11 +1898,13 @@ def slide():
 def ShowPic(value, jump_num=0):
     global changeImgLock
     global mNowImgInfo
+    global mNowFileInfo
     global mConfigData
     global RANDOM_LIST
     global RANDOM_LIST_INDEX
     global RANDOM_LIST_LENGTH
     global rotateModeVar
+    global endOfListTime
 
     changeImgLock.acquire()
     if value is JUMP_IMG:
@@ -1907,7 +1923,15 @@ def ShowPic(value, jump_num=0):
             RANDOM_LIST_INDEX %= RANDOM_LIST_LENGTH
             mNowImgInfo['imgPos'] = RANDOM_LIST[RANDOM_LIST_INDEX]
         else:
-            mNowImgInfo['imgPos'] += step
+            t_pos = mNowImgInfo['imgPos'] + step
+            t_len = mNowFileInfo['sumImgNum']
+            if (t_pos >= t_len or t_pos < 0):
+                if (time.time() - endOfListTime) > 1:
+                    endOfListTime = time.time()
+                    changeImgLock.release()
+                    return
+                endOfListTime = time.time() - 2
+            mNowImgInfo['imgPos'] = t_pos
     mNowImgInfo['direct'] = value
     mNowImgInfo['refresh'] = True
     changeImgLock.release()
@@ -2181,22 +2205,7 @@ def onKeyPress(ev):
     elif ev.keycode == KEY_CODE.codeC:
         fileRandomJump()
     elif ev.keycode == KEY_CODE.codeM:
-        dpw = ''
-        if mConfigData.defaultPassword:
-            dpw = mConfigData.defaultPassword[0]
-            for pw in mConfigData.defaultPassword[1:]:
-                dpw = dpw + ";" + pw
-        add_password = askstring(title='默认密码', prompt="请输入欲添加的可待测试默认密码: \n  1.以\";\"分隔多个\n  2.多余的空格也会被视为密码", initialvalue=dpw)
-        try:
-            add_password = add_password.split(";")
-        except:
-            return
-        for ap in add_password:
-            try:
-                mConfigData.defaultPassword.index(ap)
-            except:
-                mConfigData.defaultPassword.append(ap)
-        saveConfigToFile(mConfigData)
+        deletePack()
 
 def getFileList(file_uri, subfile=False, depth=0):
     if subfile:
@@ -2308,6 +2317,7 @@ if __name__ == '__main__':
     saveCurrentImg = False
     deleteCurrentPack = False
     displayDeletePack = False
+    endOfListTime = 0
 
     root = tk.Tk()
     # root.iconbitmap('./tk.ico')

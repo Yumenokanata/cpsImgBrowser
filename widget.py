@@ -697,7 +697,8 @@ class configDialog():
         self.scaleModeList = ['最近邻插值',
                               '抗锯齿',
                               '双线性插值',
-                              '立方插值']
+                              '立方插值',
+                              '自动']
         self.command = command
         self.configData = oldConfig
         self.ft = Font(family='Fixdsys', size=10)
