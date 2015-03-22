@@ -18,7 +18,7 @@ import PIL
 from PIL import Image
 from PIL import ImageTk
 import multiprocessing
-# import imageTk
+import shutil
 import tkinter as tk
 from tkinter.filedialog import *
 from tkinter.simpledialog import *
@@ -287,6 +287,7 @@ class guardTh(threading.Thread):
         global refreshManageBar
         global saveCurrentImg
         global deleteCurrentMark
+        global deleteCurrentPack
 
         while self.live:
             time.sleep(0.08)
@@ -377,7 +378,6 @@ class guardTh(threading.Thread):
                             filePipe.get()
                         filePipe.put(self.nowFileInfo.File[:-1])
                     self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
-                    print('asdasda')
                 refreshManageBar = True
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
@@ -400,6 +400,46 @@ class guardTh(threading.Thread):
                         self.shouldRefreshImg = TRUE
                         changeImgLock.release()
                         self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, False)
+
+            if deleteCurrentPack:
+                if mFileListMode != USE_FILE_LIST:
+                    deleteCurrentPack = False
+                    continue
+                ChangeFileLock.acquire()
+                self.clearImgQueue()
+                for posQueue in self.posQueueList:
+                    while not posQueue.empty():
+                        posQueue.get()
+                for filePipe in self.filePipeList:
+                    while not filePipe.empty():
+                        filePipe.get()
+                    filePipe.put(['', '', FILE_CLASS])
+                for filePipe in self.filePipeList:
+                    while not filePipe.empty():
+                        time.sleep(0.05)
+                print('delete: ', self.nowFileInfo.uri)
+                t_uri = self.nowFileInfo.uri
+                if os.path.isdir(t_uri):
+                    shutil.rmtree(t_uri)
+                else:
+                    os.remove(t_uri)
+                del FILE_LIST[self.nowFileInfo.FilePos]
+                OPEN_FILE_LIST = FILE_LIST
+                if manageChecked == 0:
+                    root.mainFrame.manageFrame.manageList.delete(0, END)
+                    for info in FILE_LIST:
+                        root.mainFrame.manageFrame.manageList.insert(END, info['filename'])
+                    refreshManageBar = True
+                if OPEN_FILE_LIST:
+                    ChangeFileFlag["direct"] = CURRENT_FILE
+                    ChangeFileFlag['imgPos'] = 0
+                    ChangeFileFlag["willFilePos"] = self.nowFileInfo.FilePos % len(OPEN_FILE_LIST)
+                else:
+                    label.configure(image="")
+                    label2.configure(image="")
+                    label['text'] = "No File"
+                ChangeFileLock.release()
+                deleteCurrentPack = False
 
             if refreshManageBar:
                 self.reloadManagebar()
@@ -656,7 +696,7 @@ class guardTh(threading.Thread):
         print('start')
 
     def addQueue(self, start_pos, file, fileClass, changeFile=True):
-        print('add queue start')
+        # print('add queue start')
         global mConfigData
         for posQueue in self.posQueueList:
             while not posQueue.empty():
@@ -665,7 +705,7 @@ class guardTh(threading.Thread):
         if not self.imgCache[start_pos]:
             add_queue.append(start_pos)
 
-        print('add queue')
+        # print('add queue')
 
         if mConfigData.useCache:
             if mConfigData.twoPageMode:
@@ -719,13 +759,13 @@ class guardTh(threading.Thread):
             #                         self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
             #                 except Exception as ex:
             #                     print(ex)
-            print('add queue add')
+            # print('add queue add')
             lenN = len(self.posQueueList)
             n = 0
             for pos in add_queue:
                 self.posQueueList[n % lenN].put([self.imgList[pos], pos, self.nowFileInfo.uri])
                 n += 1
-            print('add queue over')
+            # print('add queue over')
 
     def getImageList(self, cps, isfile=False):
         if isfile:
@@ -1218,6 +1258,10 @@ class guardTh(threading.Thread):
             return {'password': info['password'], 'badfile': info['badfile'], 'filename': filename, 'uri': uri}
 
     def reloadManagebar(self):
+        global refreshManageBar
+        global mFileListMode
+        global root
+        global manageChecked
         refreshManageBar = False
         if manageChecked == 0 and mFileListMode is USE_FILE_LIST:
             root.mainFrame.manageFrame.manageList.selection_clear(0, END)
@@ -1242,6 +1286,9 @@ class guardTh(threading.Thread):
             root.mainFrame.manageFrame.manageList.selection_set(self.nowFileInfo.FilePos)
 
     def saveImg(self):
+        global mNowFileInfo
+        global BOOKMARK_LIST
+        global saveCurrentImg
         t_sum = mNowFileInfo['sumImgNum']
         t_class = mNowFileInfo['fileClass']
         t_filename = mNowFileInfo['filename']
@@ -1252,7 +1299,7 @@ class guardTh(threading.Thread):
         for i in BOOKMARK_LIST:
             if i['key'] == key:
                 saveCurrentImg = False
-                continue
+                return
         if t_class is FILE_CLASS:
             with open(t_info.uri, 'rb') as fimg:
                 with open("." + FILE_SIGN + "bookmark" + FILE_SIGN + key + '.' + t_imgName.split('.')[-1],'wb') as wfile:
@@ -1274,6 +1321,11 @@ class guardTh(threading.Thread):
         saveCurrentImg = False
 
     def deleteBmark(self):
+        global mFileListMode
+        global deleteCurrentMark
+        global BOOKMARK_LIST
+        global OPEN_FILE_LIST
+        global root
         if mFileListMode is not USE_BOOKMARK_LIST:
             deleteCurrentMark = False
             return
@@ -1317,7 +1369,7 @@ class loadImgTh(multiprocessing.Process):
     def run(self):
         while self.live.value:
             if not self.filePipe.empty():
-                print('change file')
+                # print('change file')
                 fileInfo = self.filePipe.get()
                 try:
                     self.cpsFile.close()
@@ -1343,13 +1395,13 @@ class loadImgTh(multiprocessing.Process):
                     try:
                         pil_image = self.cpsFile.read(imgInfo[0])
                     except Exception as ex:
-                        print('loadImgTh ' + str(self.cpsFile) + '\n', ex)
+                        # print('loadImgTh ' + str(self.cpsFile) + '\n', ex)
                         pil_image = BAD_FILE
                 else:
                     pil_image = imgInfo[0].uri
-                    print(pil_image)
+                    # print(pil_image)
                 self.imgQueue.put([imgInfo[1], self.fileClass, pil_image, imgInfo[2]])
-                print('%d | Load img Over' % (imgInfo[1]), multiprocessing.current_process().name)
+                # print('%d | Load img Over' % (imgInfo[1]), multiprocessing.current_process().name)
             else:
                 time.sleep(0.05)
         print('loadImgTh is dead')
@@ -1876,6 +1928,20 @@ def changePicSingle(value):
     changeImgLock.release()
     rotateModeVar.set(0)
 
+def deletePack():
+    global label
+    global label2
+    global deleteCurrentPack
+    stopSlide()
+    if askquestion(title="删除", message="是否删除此图包?") == YES:
+        if mNowFileInfo['fileClass'] == FILE_CLASS:
+            if askquestion(title="警告", message="这是一个文件夹，如果继续删除将会将文件\n夹下的所有文件删除，是否继续?") != YES:
+                return
+        label.configure(image="")
+        label2.configure(image="")
+        label['text'] = "Loading"
+        deleteCurrentPack = True
+
 def changeFile(direct, jump_file=0):
     global label
     global label2
@@ -1961,11 +2027,21 @@ def checkPosInManage(event):
 
 def mouseRightEvent(event):
     global rightMenu
+    global displayDeletePack
+    global mFileListMode
     if checkPosInManage(event):
         return
     # global RIGHT_MENU_VISIBLE
     rightMenu.delete(2)
     rightMenu.insert_command(2, label="加入书签", command=addBookmark)
+
+    if mFileListMode is USE_FILE_LIST and not displayDeletePack:
+        rightMenu.insert_command(3, label="删除包", command=deletePack)
+        displayDeletePack = True
+    elif mFileListMode is not USE_FILE_LIST and displayDeletePack:
+        rightMenu.delete(3)
+        displayDeletePack = False
+
     if mFileListMode is USE_FILE_LIST:
         rightMenu.delete(1)
         rightMenu.insert_command(0, label="收藏", command=addFavorite)
@@ -2230,6 +2306,8 @@ if __name__ == '__main__':
     mFileListMode = USE_FILE_LIST
     deleteCurrentMark = False
     saveCurrentImg = False
+    deleteCurrentPack = False
+    displayDeletePack = False
 
     root = tk.Tk()
     # root.iconbitmap('./tk.ico')
