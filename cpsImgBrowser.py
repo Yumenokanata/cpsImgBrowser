@@ -61,10 +61,10 @@ FILE_NAME_MESSAGE = 3
 
 MESSAGE_BAR_HEIGHT = 20
 MESSAGE_BAR_INFO_WIDTH = 0.15
-MESSAGE_BAR_IMG_NAME_WIDTH = 0.35
+MESSAGE_BAR_IMG_NAME_WIDTH = 0.25
 MESSAGE_BAR_IMG_NUM_WIDTH = 0.1
 MESSAGE_BAR_FILE_NUM_WIDTH = 0.1
-MESSAGE_BAR_FILE_NAME_WIDTH = 0.3
+MESSAGE_BAR_FILE_NAME_WIDTH = 0.4
 
 MANAGE_BAR_BUTTON_WIDTH = 20
 MANAGE_BAR_LIST_WIDTH = 200
@@ -241,12 +241,13 @@ class guardTh(threading.Thread):
         self.subLoadProcessLive = m.Value('i', 1)
         self.imgQueue = multiprocessing.Queue()
         self.loadImgProcessList = []
+        self.loadedList = m.list([])
         for i in range(CPU_COUNT):
             filePipe = multiprocessing.Queue()
             self.filePipeList.append(filePipe)
             posQueue = multiprocessing.Queue()
             self.posQueueList.append(posQueue)
-            p = loadImgTh(filePipe, posQueue, self.imgQueue, self.subLoadProcessLive)
+            p = loadImgTh(filePipe, posQueue, self.imgQueue, self.loadedList, self.subLoadProcessLive)
             p.start()
 
     class _now_file_info():
@@ -293,6 +294,8 @@ class guardTh(threading.Thread):
         global deleteCurrentMark
         global deleteCurrentPack
         global infoVar
+        global startGif
+        global showGifTask
 
         while self.live:
             time.sleep(0.08)
@@ -382,9 +385,15 @@ class guardTh(threading.Thread):
                         while not filePipe.empty():
                             filePipe.get()
                         filePipe.put(self.nowFileInfo.File[:-1])
+                    while self.loadedList:
+                        self.loadedList.pop()
                     self.addQueue(self.nowShowImgPos, self.nowFileInfo.File, self.nowFileInfo.FileClass, True)
                     self.loadedImgNum = 0
-                    infoVar.set('加载中: %d / %d' % (self.loadedImgNum, self.imgNum))
+                    infoVar.set('已加载: %d / %d' % (self.loadedImgNum, self.imgNum))
+                    setMessage('',
+                               'Loading / %d' % (self.imgNum),
+                               '%d / %d' % (self.nowFileInfo.FilePos + 1, len(OPEN_FILE_LIST)),
+                               self.nowFileInfo.Filename)
                 refreshManageBar = True
                 if manageChecked == 1:
                     root.mainFrame.manageFrame.manageList.delete(0, END)
@@ -461,8 +470,8 @@ class guardTh(threading.Thread):
             st = time.time()
             if not self.imgQueue.empty():
                 t_info = self.imgQueue.get()
-                if t_info[3] != self.nowFileInfo.uri:
-                    pass
+                if t_info[3] != self.nowFileInfo.uri or self.imgCache[t_info[0]]:
+                    continue
                 elif t_info[2] == "bad_file":
                     self.imgCache[t_info[0]] = BAD_FILE
                 else:
@@ -480,7 +489,7 @@ class guardTh(threading.Thread):
                 if self.loadedImgNum >= self.imgNum:
                     infoVar.set('加载完成')
                 else:
-                    infoVar.set('加载中: %d / %d' % (self.loadedImgNum, self.imgNum))
+                    infoVar.set('已加载: %d / %d' % (self.loadedImgNum, self.imgNum))
             # print('check imgQueue spend: %f.5' % (time.time() - st))
 
             if self.shouldRefreshImg and self.imgCache[self.nowShowImgPos]:
@@ -493,6 +502,14 @@ class guardTh(threading.Thread):
 
                 st = time.time()
                 self.shouldRefreshImg = False
+
+                if self.imgCache[self.nowShowImgPos].format == 'GIF':
+                    self.loadGif(self.nowShowImgPos)
+                    continue
+                elif showGifTask and showGifTask.isAlive():
+                    startGif = 0
+                    while showGifTask and showGifTask.isAlive():
+                        time.sleep(0.05)
 
                 if mConfigData.twoPageMode:
                     if twoPageNum < self.imgNum:
@@ -526,6 +543,35 @@ class guardTh(threading.Thread):
                 mNowImgInfo['step'] = 2
 
                 # print("Sum Load Img Time: " + str(time.time() - st))
+
+    def loadGif(self, imgPos):
+        global startGif
+        global showGifTask
+
+        imgName = self.imgList[imgPos].filename
+        imgName = self.checkImgName(imgName)
+        showImg = self.imgCache[self.nowShowImgPos]
+        startGif = 0
+        label['text']=""
+        label2.configure(image="")
+        self.setImgMessage(True, imgName, str(imgPos + 1))
+        img_w, img_h = showImg.size
+        changeImgLock.acquire()
+        mNowImgInfo['scrollX'] = 0
+        mNowImgInfo['scrollY'] = 0
+        mNowImgInfo['imgSize'] = [img_w, img_h]
+        mNowImgInfo['boxSize'] = [img_w, img_h]
+        mNowImgInfo['used'] = 1
+        mNowImgInfo['rotate'] = 0
+        mNowImgInfo['step'] = 2
+        changeImgLock.release()
+        while showGifTask and showGifTask.isAlive():
+            time.sleep(0.05)
+        startGif = 1
+        showGifTask = threading.Thread(target=showGif, args=(showImg, ))
+        showGifTask.setDaemon(True)
+        showGifTask.start()
+        return
 
     def loadSinglePage(self, imgPos):
         global label
@@ -703,7 +749,7 @@ class guardTh(threading.Thread):
             if mConfigData.scaleMode != AUTO:
                     return pil_image.resize((width, height), mConfigData.scaleMode)
             else:
-                print(pil_image.mode)
+                # print(pil_image.mode)
                 if pil_image.mode == 'L':
                     return pil_image.resize((width, height), ANTIALIAS)
                 else:
@@ -731,58 +777,39 @@ class guardTh(threading.Thread):
         # print('add queue')
 
         if mConfigData.useCache:
-            if mConfigData.twoPageMode:
-                list_num = len(self.imgList)
-                t_nextLoadImgPos = (start_pos + 1) % list_num
+            # if mConfigData.twoPageMode:
+            #     list_num = len(self.imgList)
+            #     t_nextLoadImgPos = (start_pos + 1) % list_num
+            #     if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #         add_queue.append(t_nextLoadImgPos)
+            #     for i in range(1, min([5, list_num])):
+            #         t_nextLoadImgPos = (start_pos + i * 2) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            #         t_nextLoadImgPos = (start_pos + i * 2 +1) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            #         t_nextLoadImgPos = (start_pos - i * 2 + 1) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            #         t_nextLoadImgPos = (start_pos - i * 2) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            # else:
+            #     list_num = len(self.imgList)
+            #     for i in range(min([10, list_num])):
+            #         t_nextLoadImgPos = (start_pos + i) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            #         t_nextLoadImgPos = (start_pos - i) % list_num
+            #         if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
+            #             add_queue.append(t_nextLoadImgPos)
+            list_num = len(self.imgList)
+            for i in range(1, min([15, list_num])):
+                t_nextLoadImgPos = (start_pos + i) % list_num
                 if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
                     add_queue.append(t_nextLoadImgPos)
-                for i in range(1, min([5, list_num])):
-                    t_nextLoadImgPos = (start_pos + i * 2) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
-                    t_nextLoadImgPos = (start_pos + i * 2 +1) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
-                    t_nextLoadImgPos = (start_pos - i * 2 + 1) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
-                    t_nextLoadImgPos = (start_pos - i * 2) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
-            else:
-                list_num = len(self.imgList)
-                for i in range(min([10, list_num])):
-                    t_nextLoadImgPos = (start_pos + i) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
-                    t_nextLoadImgPos = (start_pos - i) % list_num
-                    if not self.imgCache[t_nextLoadImgPos] and not t_nextLoadImgPos in add_queue:
-                        add_queue.append(t_nextLoadImgPos)
         if add_queue:
-            # if not changeFile:
-            #     self.LoadImgPool.join()
-            #     for i in range(len(self.imgQueue)):
-            #         if self.imgQueue[i] and self.imgQueue[i].ready():
-            #             t_info = self.imgQueue[i].get()
-            #             self.imgQueue[i] = ''
-            #             for n, imgPos in enumerate(add_queue):
-            #                 if i == imgPos:
-            #                     add_queue.pop(n)
-            #                     break
-            #             if t_info[2] == "bad_file":
-            #                 self.imgCache[t_info[0]] = BAD_FILE
-            #             else:
-            #                 try:
-            #                     if t_info[1] == FILE_CLASS:
-            #                         try:
-            #                             self.imgCache[t_info[0]] = PIL.Image.open(t_info[2])
-            #                         except:
-            #                             self.imgCache[t_info[0]] = BAD_FILE
-            #                     else:
-            #                         self.imgCache[t_info[0]] = PIL.Image.open(io.BytesIO(t_info[2]))
-            #                 except Exception as ex:
-            #                     print(ex)
-            # print('add queue add')
             lenN = len(self.posQueueList)
             n = 0
             for pos in add_queue:
@@ -1376,7 +1403,7 @@ class guardTh(threading.Thread):
         deleteCurrentMark = False
 
 class loadImgTh(multiprocessing.Process):
-    def __init__(self, filePipe, posQueue, imgQueue, live):
+    def __init__(self, filePipe, posQueue, imgQueue, loadedList, live):
         multiprocessing.Process.__init__(self)
         self.mLoadingFilePos = -1
         self.filePipe = filePipe
@@ -1385,6 +1412,7 @@ class loadImgTh(multiprocessing.Process):
         self.live = live
         self.posQueue = posQueue
         self.imgQueue = imgQueue
+        self.loadedList = loadedList
 
     # def finish(self):
     #     self.live.value = 0
@@ -1392,7 +1420,7 @@ class loadImgTh(multiprocessing.Process):
     def run(self):
         while self.live.value:
             if not self.filePipe.empty():
-                # print('change file')
+                print('change file')
                 fileInfo = self.filePipe.get()
                 try:
                     self.cpsFile.close()
@@ -1414,17 +1442,22 @@ class loadImgTh(multiprocessing.Process):
             elif self.cpsFile and not self.posQueue.empty():
                 # print('loadImg ', )
                 imgInfo = self.posQueue.get()
-                if self.fileClass != FILE_CLASS:
-                    try:
-                        pil_image = self.cpsFile.read(imgInfo[0])
-                    except Exception as ex:
-                        # print('loadImgTh ' + str(self.cpsFile) + '\n', ex)
-                        pil_image = BAD_FILE
-                else:
-                    pil_image = imgInfo[0].uri
-                    # print(pil_image)
-                self.imgQueue.put([imgInfo[1], self.fileClass, pil_image, imgInfo[2]])
-                # print('%d | Load img Over' % (imgInfo[1]), multiprocessing.current_process().name)
+                if not imgInfo[1] in self.loadedList:
+                    if self.fileClass != FILE_CLASS:
+                        try:
+                            pil_image = self.cpsFile.read(imgInfo[0])
+                        except Exception as ex:
+                            # print('loadImgTh ' + str(self.cpsFile) + '\n', ex)
+                            pil_image = BAD_FILE
+                    else:
+                        pil_image = imgInfo[0].uri
+                        # print(pil_image)
+                    # print('self.fileUri', self.fileUri)
+                    # print('imgInfo[2]', imgInfo[2])
+                    if self.fileUri == imgInfo[2]:
+                        self.loadedList.append(imgInfo[1])
+                    self.imgQueue.put([imgInfo[1], self.fileClass, pil_image, imgInfo[2]])
+                    print('%d | Load img Over' % (imgInfo[1]), multiprocessing.current_process().name)
             else:
                 time.sleep(0.05)
         print('loadImgTh is dead')
@@ -1439,6 +1472,19 @@ def setMessage(imgName, imgNum, fileNum, fileName):
     InfoMessage[IMG_NUM_MESSAGE].set(imgNum)
     InfoMessage[FILE_NUM_MESSAGE].set(fileNum)
     InfoMessage[FILE_NAME_MESSAGE].set(fileName)
+
+def showGif(imgCache):
+    global startGif
+    while startGif:
+        try:
+            seq = imgCache.tell()
+            imgCache.seek(seq + 1)
+        except EOFError:
+            imgCache.seek(0)
+        tk_img = PIL.ImageTk.PhotoImage(imgCache)
+        label.configure(image=tk_img)
+        label.image = tk_img
+        time.sleep(0.1)
 
 def fileDialog(master, MODE):
     global nowFilePath
@@ -1835,21 +1881,21 @@ def initMessage(master):
     ImgNumVar = StringVar()
     master.messageLabel.infoImgNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=ImgNumVar, justify=RIGHT)
     master.messageLabel.infoImgNumMessage.place(in_=master.messageLabel,
-                                                relx=0.5, rely=0,
+                                                relx=0.4, rely=0,
                                                 relheight=1,
                                                 relwidth=MESSAGE_BAR_IMG_NUM_WIDTH - 0.001,
                                                 anchor=NW)
     FileNumVar = StringVar()
     master.messageLabel.infoFileNumMessage = tkinter.Message(master.messageLabel, aspect=500, textvariable=FileNumVar, justify=RIGHT)
     master.messageLabel.infoFileNumMessage.place(in_=master.messageLabel,
-                                                 relx=0.6, rely=0,
+                                                 relx=0.5, rely=0,
                                                  relheight=1,
                                                  relwidth=MESSAGE_BAR_FILE_NUM_WIDTH - 0.001,
                                                  anchor=NW)
     FileNameVar = StringVar()
     master.messageLabel.infoFileNameMessage = tkinter.Message(master.messageLabel, aspect=4000, textvariable=FileNameVar, justify=RIGHT)
     master.messageLabel.infoFileNameMessage.place(in_=master.messageLabel,
-                                                  relx=0.7, rely=0,
+                                                  relx=0.6, rely=0,
                                                   relheight=1,
                                                   relwidth=MESSAGE_BAR_FILE_NAME_WIDTH - 0.001,
                                                   anchor=NW)
@@ -2358,6 +2404,8 @@ if __name__ == '__main__':
     deleteCurrentPack = False
     displayDeletePack = False
     endOfListTime = 0
+    startGif = 0
+    showGifTask = None
 
     root = tk.Tk()
     # root.iconbitmap('./tk.ico')
